@@ -1,0 +1,8 @@
+.DS_Store
+*.pptx
+*.zip
+*.tar.gz
+adl_hw1/
+submission_package/
+__pycache__/
+*.pyc
