@@ -4,9 +4,9 @@ Bilingual (zh/en) multi-label sales-intent classification, submitted as a **lang
 - Chinese examples → `hfl/chinese-macbert-base`, fine-tuned on the zh subset of `train.jsonl`
 - English examples → `roberta-base`, fine-tuned on the en subset of `train.jsonl`
 - Routing uses the `language` field already present in `test.json` — no language detection needed.
-- Each route ignores dialogue context entirely (utterance-only input) — this was found empirically to outperform every context-inclusion strategy tried, on both languages. See `report.pdf` / `WORKLOG.md` for the full ablation evidence.
+- Each route ignores dialogue context entirely (utterance-only input) — this was found empirically to outperform every context-inclusion strategy tried, on both languages. See `report.pdf` / `docs/WORKLOG.md` for the full ablation evidence.
 
-Full experiment log with every configuration tried and its measured result is in `WORKLOG.md`; a running to-do/status file is in `TODO.md`.
+Full experiment log with every configuration tried and its measured result is in `docs/WORKLOG.md`; a running to-do/status file is in `docs/TODO.md`. Course spec and lecture reference material are under `docs/spec/`; the initial literature/model survey is under `docs/survey/`.
 
 ## Environment
 
@@ -17,7 +17,7 @@ pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu126   #
 pip install transformers==4.50.0 datasets==2.21.0 accelerate==0.34.2 scikit-learn==1.7.2 evaluate matplotlib gdown pandas tqdm sentencepiece protobuf numpy
 ```
 
-(Note: `scikit-learn==1.9.0` as listed in the assignment's allowed-package list requires Python ≥3.11 and cannot install under Python 3.10 — see `TA_QUESTIONS.md` item 8. We used `1.7.2`, the latest version compatible with Python 3.10, for our own dev tooling; it is not used anywhere in `run.sh`.)
+(Note: `scikit-learn==1.9.0` as listed in the assignment's allowed-package list requires Python ≥3.11 and cannot install under Python 3.10 — see `docs/TA_QUESTIONS.md` item 8. We used `1.7.2`, the latest version compatible with Python 3.10, for our own dev tooling; it is not used anywhere in `run.sh`.)
 
 Data (`train.jsonl`, `context.json`, `test.json`, `public_test_gold.csv`) is expected under `data/` — not included in this submission per the assignment rules; place the provided files there before running the steps below.
 
@@ -77,4 +77,4 @@ bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
 | Public test (500 ex., diagnostic — thresholds/model chosen on dev only) | 0.8057 | 0.8238 |
 | Dev split (450 ex., stratified from train) | 0.8502 | 0.8556 |
 
-See `WORKLOG.md` for the full session log (every model/context/loss ablation tried, with configs and reproduce commands) and `TODO.md` for open items and report-question mapping.
+See `docs/WORKLOG.md` for the full session log (every model/context/loss ablation tried, with configs and reproduce commands) and `docs/TODO.md` for open items and report-question mapping.
