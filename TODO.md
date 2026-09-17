@@ -2,6 +2,12 @@
 
 Running checklist of everything surveyed (Deep Research + lecture) and its status. Full configs/results go in `WORKLOG.md`; this file tracks *what's left* and indexes what's landed. Rewritten 2026-09-17 to consolidate — see git-free history in `WORKLOG.md` if older phrasing is needed.
 
+## Project organization (established 2026-09-17)
+
+- **Mac** (`/Users/chun-feitan/Desktop/CSIE5431/`) — Claude session work: editing docs/code, orchestrating GPU runs.
+- **GPU** (`gsm-gpu2:/home/jtan/adl_hw1/`) — experiments only, disposable. Cleaned 2026-09-17: `results/` went 38GB→18GB by deleting large checkpoint/logit files for runs no longer part of any live candidate (kept only the 7 checkpoints backing candidates A/B/C — metadata for all ~30 runs is kept, just not the multi-hundred-MB weight files); removed the redundant `package/` build directory (already copied to Mac and verified).
+- **GitHub** (private repo `goog-msft-fb-nflx-nvda-aapl/csie5431-adl-hw1`) — **source of truth for code and progress management going forward.** Contains this file, `WORKLOG.md`, `README.md`, `TA_QUESTIONS.md`, `FOLLOWUP_QUESTIONS.md`, `code/`, `run.sh`, `download.sh`, the spec/lecture reference docs, and the Deep Research survey. Kept **private** — the assignment bans publishing code before the deadline. Excludes provided data and packaged model weights via `.gitignore` (those don't belong in a code repo regardless of privacy).
+
 ## Current best result (this session) — two candidates, unresolved tension between them, see WORKLOG for full reasoning
 
 **Architecture: language-routed ensemble** (route by the `language` field, given at inference time — no detection needed), not a single bilingual model. Both languages found: dropping dialogue context (utterance-only) beats every context strategy tried.

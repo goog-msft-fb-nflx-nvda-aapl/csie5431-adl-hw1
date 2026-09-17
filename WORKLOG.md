@@ -584,6 +584,22 @@ Tried combining all three good en LR checkpoints (C3b/2e-5, D1/5e-5, D1b/1e-4) r
 
 ## 2026-09-17 (cont'd) — Round 2, per explicit instruction: work through every remaining unblocked TODO item, document, then discuss
 
+### Correction to Phase A: mBERT was never given a fair epoch budget — re-run at 20 epochs
+
+Original Phase A only tested mBERT at 6 epochs (loss curve *looked* plateaued: 0.630→0.635→0.640 across the last 3 epochs) and deprioritized a re-run. Given the same mistake was already caught once for XLM-R this session (6ep looked done, 10ep proved otherwise), re-ran mBERT at 20 epochs for a fair comparison instead of trusting the earlier "looks plateaued" read.
+
+**Reproduce**: `python -u train.py --model_key mbert --context_mode lastk --k 2 --loss bce --lang_subset all --epochs 20 --run_name E1_mbert_lastk2_bce_ep20`.
+
+**Result — the original Phase A conclusion was wrong.** mBERT was just as undertrained at 6 epochs as XLM-R was:
+
+| Model | Epochs | Dev tuned macro | Public-test tuned macro |
+|---|---|---|---|
+| mBERT (A1, original) | 6 | 0.7154 | 0.6685 |
+| XLM-R (A2b) | 10 | 0.7587 | 0.6847 |
+| **mBERT (E1, corrected)** | **20** | **0.7821** | **0.7547** |
+
+**At a fair epoch budget, mBERT actually beats XLM-R as the single bilingual model** — the original "XLM-R is the Phase-A winner" conclusion was an artifact of comparing mBERT-undertrained against XLM-R-properly-trained, not a real architecture difference. Flagging this plainly rather than quietly fixing it: it doesn't change the final architecture decision (language routing still beats any single bilingual model by a wide margin), but it does change the "model variants" report answer, and it's a caution about trusting an epoch curve's apparent plateau without actually testing past it — now demonstrated twice in one session (XLM-R, then mBERT).
+
 ### Runs B7/B8 — zh-route context sweep completion (lastk-4, headtail), matching the en-route ablation for report symmetry
 
 **Reproduce**: `python -u train.py --model_key macbert --context_mode lastk --k 4 --loss weighted_bce --lang_subset zh --epochs 20 --run_name B7_...` and same with `--context_mode headtail --run_name B8_...`.
@@ -690,20 +706,4 @@ Everything unblocked in the round-2 queue has been run. Headline results, most t
 
 **Newly discovered practical problem with the BGE-M3 candidate**: checked actual checkpoint size on disk — `best_model.pt` (raw state_dict, fp32) is **2.2GB per route**. Two routes (zh + en) = **~4.4GB total, over the 4GB download budget** (this is before any `save_pretrained` packaging overhead, so the real number could be slightly different but is in the same ballpark). MacBERT+RoBERTa's package was 872MB combined — BGE-M3 is roughly 5x that per model given its 568M vs. ~100-280M param counts. If BGE-M3 is adopted, this needs fixing before packaging: fp16 conversion (halves to ~2.2GB total, comfortably under budget) is the obvious fix and shouldn't cost accuracy (inference-time precision, not a retrain), but hasn't been tested yet. Added to `FOLLOWUP_QUESTIONS.md` as a practical question (is fp16 conversion an acceptable way to fit the budget, or is there a size ceiling we should know about) rather than assuming the answer.
 
-### Correction to Phase A: mBERT was never given a fair epoch budget — re-run at 20 epochs
-
-Original Phase A only tested mBERT at 6 epochs (loss curve *looked* plateaued: 0.630→0.635→0.640 across the last 3 epochs) and deprioritized a re-run. Given the same mistake was already caught once for XLM-R this session (6ep looked done, 10ep proved otherwise), re-ran mBERT at 20 epochs for a fair comparison instead of trusting the earlier "looks plateaued" read.
-
-**Reproduce**: `python -u train.py --model_key mbert --context_mode lastk --k 2 --loss bce --lang_subset all --epochs 20 --run_name E1_mbert_lastk2_bce_ep20`.
-
-**Result — the original Phase A conclusion was wrong.** mBERT was just as undertrained at 6 epochs as XLM-R was:
-
-| Model | Epochs | Dev tuned macro | Public-test tuned macro |
-|---|---|---|---|
-| mBERT (A1, original) | 6 | 0.7154 | 0.6685 |
-| XLM-R (A2b) | 10 | 0.7587 | 0.6847 |
-| **mBERT (E1, corrected)** | **20** | **0.7821** | **0.7547** |
-
-**At a fair epoch budget, mBERT actually beats XLM-R as the single bilingual model** — the original "XLM-R is the Phase-A winner" conclusion (2026-09-17, Phase A summary section above) was an artifact of comparing mBERT-undertrained against XLM-R-properly-trained, not a real architecture difference. Flagging this plainly rather than quietly fixing it: it doesn't change the final architecture decision (language routing still beats any single bilingual model by a wide margin — routing's public-test macro is 0.8057–0.8218 vs. mBERT-E1's 0.7547), but it does change the "model variants" report answer, and it's a caution about trusting an epoch curve's apparent plateau without actually testing past it — now demonstrated twice in one session (XLM-R, then mBERT).
-
-**Where things stand**: dev-estimated performance already clears the challenge tier; the public-test diagnostic (deliberately more English-heavy than train/dev) is within ~0.01–0.02 of it on both metrics. Diminishing returns are visible in both routes' epoch curves at this point (zh: flat-0.5 macro barely moves 0.841→0.847 from epoch 10 to 14; en: noisier but slowing). Reasonable stopping point for this round of epoch-scaling — further gains likely need a different lever (LR search, `Too_Expensive`/`Compare_Competitor`-specific attention on the en side where they're still the weak classes, or the still-untried augmentation/auxiliary-pretraining options blocked on TA questions 2–3).
+**Note (2026-09-17)**: this worklog is also mirrored to a private GitHub repo (`goog-msft-fb-nflx-nvda-aapl/csie5431-adl-hw1`) which is now the source of truth for code and docs — see the project's TODO.md for the current organizational split (Mac = session work, GPU = experiments only, GitHub = code/progress management).
