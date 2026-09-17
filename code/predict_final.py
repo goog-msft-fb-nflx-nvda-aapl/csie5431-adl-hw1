@@ -45,7 +45,9 @@ def load_route(model_dir, device):
     with open(f"{model_dir}/inference_meta.json") as f:
         meta = json.load(f)
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir, local_files_only=True).to(device)
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_dir, local_files_only=True, torch_dtype="auto"
+    ).to(device)
     model.eval()
     thresholds = np.array([meta["thresholds"][l] for l in LABELS])
     return model, tokenizer, meta, thresholds

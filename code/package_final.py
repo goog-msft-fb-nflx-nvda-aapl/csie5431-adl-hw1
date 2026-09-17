@@ -10,7 +10,7 @@ from models import LABELS, MODEL_REGISTRY
 RESULTS_ROOT = "/home/jtan/adl_hw1/results"
 
 
-def package(run_name, out_dir):
+def package(run_name, out_dir, fp16=False):
     with open(f"{RESULTS_ROOT}/{run_name}/config.json") as f:
         config = json.load(f)
     with open(f"{RESULTS_ROOT}/{run_name}/thresholds.json") as f:
@@ -22,6 +22,8 @@ def package(run_name, out_dir):
         hf_id, num_labels=len(LABELS), problem_type="multi_label_classification"
     )
     model.load_state_dict(torch.load(f"{RESULTS_ROOT}/{run_name}/best_model.pt", map_location="cpu"))
+    if fp16:
+        model.half()
 
     os.makedirs(out_dir, exist_ok=True)
     model.save_pretrained(out_dir)
@@ -45,5 +47,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--run_name", required=True)
     ap.add_argument("--out_dir", required=True)
+    ap.add_argument("--fp16", action="store_true")
     args = ap.parse_args()
-    package(args.run_name, args.out_dir)
+    package(args.run_name, args.out_dir, fp16=args.fp16)

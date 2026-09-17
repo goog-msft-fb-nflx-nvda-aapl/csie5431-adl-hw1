@@ -84,6 +84,7 @@ def main():
     ap.add_argument("--run_name", required=True)
     ap.add_argument("--train_path", default="/home/jtan/adl_hw1/data/train_split.jsonl")
     ap.add_argument("--dev_path", default="/home/jtan/adl_hw1/data/dev_split.jsonl")
+    ap.add_argument("--aug_path", default=None, help="extra train-only examples (e.g. back-translated), never added to dev")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -102,6 +103,10 @@ def main():
         model.config.pad_token_id = tokenizer.pad_token_id
 
     train_examples = filter_lang(load_jsonl(args.train_path), args.lang_subset)
+    if args.aug_path:
+        aug_examples = filter_lang(load_jsonl(args.aug_path), args.lang_subset)
+        print(f"adding {len(aug_examples)} augmented train-only examples from {args.aug_path}")
+        train_examples = train_examples + aug_examples
     dev_examples = filter_lang(load_jsonl(args.dev_path), args.lang_subset)
 
     train_ds = IntentDataset(train_examples, tokenizer, args.context_mode, args.k, args.max_length)

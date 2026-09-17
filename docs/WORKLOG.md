@@ -707,3 +707,60 @@ Everything unblocked in the round-2 queue has been run. Headline results, most t
 **Newly discovered practical problem with the BGE-M3 candidate**: checked actual checkpoint size on disk — `best_model.pt` (raw state_dict, fp32) is **2.2GB per route**. Two routes (zh + en) = **~4.4GB total, over the 4GB download budget** (this is before any `save_pretrained` packaging overhead, so the real number could be slightly different but is in the same ballpark). MacBERT+RoBERTa's package was 872MB combined — BGE-M3 is roughly 5x that per model given its 568M vs. ~100-280M param counts. If BGE-M3 is adopted, this needs fixing before packaging: fp16 conversion (halves to ~2.2GB total, comfortably under budget) is the obvious fix and shouldn't cost accuracy (inference-time precision, not a retrain), but hasn't been tested yet. Added to `FOLLOWUP_QUESTIONS.md` as a practical question (is fp16 conversion an acceptable way to fit the budget, or is there a size ceiling we should know about) rather than assuming the answer.
 
 **Note (2026-09-17)**: this worklog is also mirrored to a private GitHub repo (`goog-msft-fb-nflx-nvda-aapl/csie5431-adl-hw1`) which is now the source of truth for code and docs — see the project's TODO.md for the current organizational split (Mac = session work, GPU = experiments only, GitHub = code/progress management).
+
+## 2026-09-17 (cont'd) — Round 3: proceeding on external-dataset pretraining and augmentation on explicit instruction to assume they're allowed
+
+User confirmed: assume auxiliary external-dataset pretraining and train-derived augmentation are permitted, revisit if the TA later says otherwise (both are still asked about in `FOLLOWUP_QUESTIONS.md`, unanswered). Also confirmed the 4GB budget question is specifically about the assignment's `download.sh` limit, not GPU disk space (GPU has ~390GB free — never the constraint).
+
+### BGE-M3 fp16 packaging — confirmed the fix works
+
+Converted a saved BGE-M3 checkpoint with `model.half()` before `save_pretrained`: **1.1GB per route (down from 2.2GB fp32), 2.2GB for both routes — comfortably under the 4GB budget.** Added `--fp16` to `code/package_final.py` and `torch_dtype="auto"` to `code/predict_final.py`'s model loading (so a packaged fp16 checkpoint actually loads in fp16 at inference rather than being upcast to fp32 in memory). Not yet re-verified that fp16 doesn't cost accuracy at inference — should do a quick before/after comparison on the public-test diagnostic before treating this as fully settled, but the size problem is solved.
+
+### Run H1 — English domain-adaptive MLM pretraining on MultiWOZ, then fine-tune as usual (Run H2)
+
+**Motivation**: the en route is the weaker of the two, and `Too_Expensive`/`Compare_Competitor` remain its softest classes. Tried continuing unsupervised MLM pretraining of `roberta-base` on MultiWOZ's English dialogue turns (unlabeled, no dialogue-act or intent labels used at all) before fine-tuning on our own labeled data.
+
+**Reproduce (H1, pretraining)**: `python -u domain_adapt_mlm.py --base_model roberta-base --out_dir /home/jtan/adl_hw1/domain_adapted/roberta_multiwoz_en --epochs 3` — new script `code/domain_adapt_mlm.py`, loads `multi_woz_v22` (Apache-2.0, via `datasets`) train+validation splits, flattens to 128,300 raw utterances (both user and system turns, unsupervised), runs standard masked-LM training (15% masking, `DataCollatorForLanguageModeling`), saves just the base encoder (not the LM head) so it loads into `AutoModelForSequenceClassification` like any other checkpoint. MLM loss: 1.184→0.900→0.811 over 3 epochs — normal convergence, no issues.
+
+**Reproduce (H2, fine-tune)**: added a `roberta_dapt` entry to `models.py`'s registry pointing at the local domain-adapted checkpoint directory (any local path works with `AutoModelForSequenceClassification.from_pretrained`, confirmed) — `python -u train.py --model_key roberta_dapt --context_mode none --loss asl --lang_subset en --epochs 20 --lr 1e-4 --run_name H2_roberta_dapt_en` (same recipe as the best vanilla-RoBERTa en run, D1b, for a fair comparison).
+
+**Result — domain adaptation on MultiWOZ did not help, and looks slightly negative:**
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Vanilla RoBERTa, same LR (D1b) | 0.8196 | 0.7770 |
+| **MultiWOZ-domain-adapted RoBERTa (H2)** | 0.8160 | 0.7653 |
+| Best en single model overall (D1, lr5e-5) | 0.8364 | 0.7642 |
+| Best en model overall (BGE-M3) | 0.8392 | 0.7950 |
+
+Slightly worse than the vanilla model at the identical learning rate on both splits, and clearly behind the actual en-route champions. **Working explanation**: MultiWOZ is task-oriented booking dialogue (hotels, restaurants, taxis, trains) — different register and topic distribution from sales-conversation text (price negotiation, product doubts, insurance/e-commerce). Continuing MLM pretraining on out-of-domain dialogue text doesn't seem to transfer useful signal here, and may have mildly disrupted RoBERTa's original pretrained representation without replacing it with something more useful for this task. Not adopting domain-adapted RoBERTa. This is a genuine, measured negative result for the domain-adaptive-pretraining hypothesis — worth reporting as such rather than omitting.
+
+**Not yet tried**: a domain-closer corpus (e-commerce/customer-service dialogue) would be a fairer test of the domain-adaptation hypothesis than MultiWOZ specifically — MultiWOZ was the cleanest-licensed option surveyed, not necessarily the best-matched one. If pursued further, worth trying more epochs (only 3 were run) or a closer-domain corpus before concluding domain-adaptive pretraining doesn't work in general for this task, as opposed to concluding MultiWOZ specifically isn't close enough.
+
+### Run H3/H4 — back-translation (en→zh→en round-trip) augmentation of the en training subset
+
+**Motivation**: the en route has only 627 training examples, by far the smallest-data route tried this session. New script `code/back_translate.py` uses `Helsinki-NLP/opus-mt-en-zh` + `Helsinki-NLP/opus-mt-zh-en` (both public, permissively-licensed MarianMT models) to round-trip-translate each en training utterance, producing a same-label paraphrase. All 627 examples produced non-trivial (i.e. actually different-text) paraphrases. Spot-checked 5 pairs by eye — translations are plausible paraphrases, occasionally slightly awkward (normal back-translation noise), core semantic content and thus label applicability preserved in every one checked.
+
+Added `--aug_path` to `train.py`: loads extra examples and appends them to the *training* set only (never to dev), so validation stays clean.
+
+**Reproduce**: `python back_translate.py --in_path .../train_split.jsonl --out_path .../train_split_en_bt.jsonl --lang en`, then `python -u train.py --model_key roberta --context_mode none --loss asl --lang_subset en --epochs 20 --lr 1e-4 --aug_path .../train_split_en_bt.jsonl --run_name H3_roberta_bt_en` (doubles the en training set to 1254 examples).
+
+**Result — roughly a wash, not a clear win:**
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Vanilla RoBERTa, lr=1e-4, no aug (D1b) | 0.8196 | 0.7770 |
+| **+ back-translation aug, lr=1e-4 (H3)** | 0.8152 (−0.004) | 0.7756 (−0.001) |
+
+Essentially tied with the un-augmented baseline at the same learning rate — augmentation neither clearly helped nor hurt here. Tried the same augmented set at lr=5e-5 (H4) since that's actually the strongest-dev single en config found this session, to check whether augmentation interacts differently with a different LR:
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Vanilla RoBERTa, lr=5e-5, no aug (D1 — best single en model) | **0.8364** | 0.7642 |
+| + back-translation aug, lr=5e-5 (H4) | 0.8028 (−0.034) | 0.7541 (−0.010) |
+| Vanilla RoBERTa, lr=1e-4, no aug (D1b) | 0.8196 | 0.7770 |
+| + back-translation aug, lr=1e-4 (H3) | 0.8152 (−0.004) | 0.7756 (−0.001) |
+
+**Back-translation augmentation is now 2-for-2 neutral-to-negative** — worse than the un-augmented baseline at both learning rates tried, clearly so at lr=5e-5 (which is otherwise the strongest en config found this session). **Not adopting back-translation augmentation for the en route.** Combined with the MultiWOZ domain-adaptation result above, both of the previously-TA-gated techniques we got explicit permission to assume were allowed turned out to be neutral-or-negative on this specific dataset once actually tested — a genuine, evidence-backed finding, not a missed opportunity. Plausible shared explanation for both: this dataset's real bottleneck on the en route looks like it's the small *label*-side signal (rare classes, only 627 examples) rather than a lack of raw English text or an out-of-domain starting representation — techniques that add more *unlabeled* text or noisy label-preserving paraphrases don't address that; more/better-targeted labeled examples might, but that's not something we're allowed to add.
+
+**Current standing champions unchanged**: BGE-M3 remains the strongest en (and zh) route found this session; RoBERTa (D1, lr=5e-5, no augmentation, no domain adaptation) remains the strongest RoBERTa-based en route if BGE-M3's size/scope questions come back unfavorable.

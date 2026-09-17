@@ -64,13 +64,13 @@ Running checklist of everything surveyed (Deep Research + lecture) and its statu
 | BGE-M3 | `BAAI/bge-m3` | DR extension | long-context ablation | not started, low priority — context has consistently hurt, so a long-context model is unlikely to help |
 | Qwen2.5-0.5B/1.5B-Instruct | HF | DR extension | Additional Exploration candidate | not started, low priority |
 
-## Datasets — surveyed, none usable as direct label transfer; auxiliary use blocked pending TA
+## Datasets — surveyed, none usable as direct label transfer
 
 | Dataset | License | Considered use | Status |
 |---|---|---|---|
-| MultiWOZ 2.1/2.2 | Apache-2.0 | Domain-adaptive MLM pretraining | **blocked pending TA Q2** |
-| Schema-Guided Dialogue (SGD) | CC BY-SA 4.0 | Auxiliary dialogue-act pretraining | **blocked pending TA Q2** |
-| MASSIVE | CC BY 4.0 | Multilingual transfer / back-translation seed | **blocked pending TA Q2** |
+| MultiWOZ 2.1/2.2 | Apache-2.0 | Domain-adaptive MLM pretraining, en route | **tried, negative result** (2026-09-17, run on user's explicit "assume allowed" instruction — see WORKLOG): dev tuned macro 0.8160 vs. vanilla 0.8196 at the same LR, and clearly behind the actual en champions. Not adopted. |
+| Schema-Guided Dialogue (SGD) | CC BY-SA 4.0 | Auxiliary dialogue-act pretraining | not tried — MultiWOZ's negative result plus the shared "not a label-signal problem" explanation makes this lower priority now |
+| MASSIVE | CC BY 4.0 | Multilingual transfer / back-translation seed | not tried, same reasoning |
 | JDDC / ECD | gated / unclear terms | Chinese e-commerce domain MLM adaptation | deprioritized — licensing friction not worth the timeline risk |
 | SalesLLM benchmark | — | **BANNED by name in PA1.md** | excluded |
 | MultiSense/SaleIntent_bert | — | **BANNED — trained on another sales-intent dataset** | excluded |
@@ -87,8 +87,9 @@ Running checklist of everything surveyed (Deep Research + lecture) and its statu
 | Language routing | **done — the single biggest architectural win this session** |
 | Epoch scaling (10→20) | done both routes — real gains both times, diminishing by epoch ~15-20 |
 | MLSMOTE / oversampling | **deliberately skipped** — DR consensus says poor fit for multi-label at n=3000 |
-| Back-translation / paraphrase augmentation | **blocked pending TA Q3** |
-| Domain-adaptive MLM pretraining on external corpora | **blocked pending TA Q2** |
+| Back-translation / paraphrase augmentation | **tried (en route), negative result** — 2-for-2 neutral-to-negative vs. no-augmentation at two learning rates (dev tuned macro 0.8364→0.8028 at lr5e-5, 0.8196→0.8152 at lr1e-4). Not adopted. |
+| Domain-adaptive MLM pretraining on external corpora | **tried (MultiWOZ, en route), negative result** — see Datasets table above. |
+| BGE-M3 fp16 packaging | **done** — halves 2.2GB/route to 1.1GB/route (2.2GB total both routes), fits the 4GB budget. Not yet verified fp16 doesn't cost accuracy — should spot-check before treating as final. |
 | Language-balanced sampling (`--balance_lang`) | implemented, **not needed** — routing made this moot (each route only ever sees its own language) |
 
 ## Round-2 exploration queue (2026-09-17, per explicit instruction: work through everything unblocked, document each, then discuss)
@@ -104,4 +105,13 @@ Everything below is unblocked by the TA (doesn't need external-dataset or augmen
 - [x] Verify XLM-R / MacBERT exact license text against the live HF model cards — **done.** `xlm-roberta-base`: **MIT** (confirms Kimi/Perplexity's Deep Research claim, refutes Gemini's guessed "CC BY-NC 4.0" — glad we checked ourselves rather than trusting either). `hfl/chinese-macbert-base`: **Apache-2.0** (confirmed as stated).
 - [x] Dedicated per-class ΔF1-from-context figure/table — assembled in WORKLOG.md. Reveals a language-specific exception hidden by the aggregate finding: on English only, `Compare_Competitor`/`Too_Expensive` are the two classes where context still helps (matching the original EDA hypothesis for exactly those two); on Chinese even those two improve without context.
 
-Blocked, not attempting until TA answers: MultiWOZ/SGD/MASSIVE auxiliary pretraining, back-translation/paraphrase augmentation, JDDC/ECD (also deprioritized on licensing grounds independent of the TA question).
+Blocked, not attempting until TA answers: JDDC/ECD (deprioritized on licensing grounds independent of the TA question), SGD/MASSIVE auxiliary pretraining (deprioritized given MultiWOZ's negative result and shared explanation — see below).
+
+## Round 3 (2026-09-17) — proceeded on external-dataset pretraining and augmentation, user said assume allowed
+
+Per explicit instruction: assumed permission for external-dataset auxiliary pretraining and train-derived augmentation (still unanswered by the TA — revisit if they say otherwise), and confirmed the 4GB budget is about the grading machine's `download.sh`, not GPU disk space (GPU never a constraint).
+
+- [x] **BGE-M3 fp16 packaging** — confirmed 1.1GB/route (2.2GB total), fits the 4GB budget. `package_final.py --fp16` implemented.
+- [x] **English domain-adaptive MLM pretraining on MultiWOZ** (`code/domain_adapt_mlm.py`, new) — 128K unlabeled English utterances, 3-epoch MLM continued pretraining of `roberta-base`, then fine-tuned as usual. **Negative result**: dev tuned macro 0.8160 vs. vanilla 0.8196 at the same LR — no better, arguably slightly worse.
+- [x] **Back-translation augmentation of the en route** (`code/back_translate.py`, new, uses `Helsinki-NLP/opus-mt-en-zh`/`opus-mt-zh-en`) — doubled the en training set (627→1254). **Negative result, 2-for-2**: worse than no-augmentation at both learning rates tried (lr5e-5: 0.8364→0.8028; lr1e-4: 0.8196→0.8152).
+- **Conclusion**: both previously-blocked techniques turned out neutral-to-negative once tested, not missed wins. Working theory: the en route's real bottleneck is labeled-signal scarcity (rare classes, only 627 examples), which neither unlabeled-text pretraining nor label-preserving paraphrase augmentation actually addresses. **Standing champions unchanged**: BGE-M3 (best overall), vanilla RoBERTa lr=5e-5 no-augmentation (best RoBERTa-only en config).

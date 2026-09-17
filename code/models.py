@@ -13,4 +13,8 @@ MODEL_REGISTRY = {
     "mdeberta": dict(hf_id="microsoft/mdeberta-v3-base", lang_scope="all", source="extension"),
     "bgem3": dict(hf_id="BAAI/bge-m3", lang_scope="all", source="extension"),
     "qwen05": dict(hf_id="Qwen/Qwen2.5-0.5B-Instruct", lang_scope="all", source="extension"),
+    "roberta_dapt": dict(
+        hf_id="/home/jtan/adl_hw1/domain_adapted/roberta_multiwoz_en",
+        lang_scope="en", source="domain-adapted-multiwoz-mlm",
+    ),
 }
