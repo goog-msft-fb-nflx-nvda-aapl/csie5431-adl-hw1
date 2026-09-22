@@ -947,3 +947,18 @@ The zh route (F3) never got the recipe upgrades that transformed en (items 3–4
 **Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss db --lr 2e-5 --lang_subset zh --epochs 15 --batch_size 8 --warmup_ratio 0.15 --run_name O1_bgem3_zh_dbloss`.
 
 **Result — a wash, not a clear win**: dev tuned macro=0.8654 vs. F3's (weighted BCE) 0.8692 — slightly *worse*. Public-zh tuned macro=0.8598 vs. F3's 0.8513 — better there. Mixed signal, and dev (our selection criterion) favors keeping F3. **Not adopting — F3 (weighted BCE, lr=2e-5, no warmup change) remains the zh route.** Consistent with the session's repeated finding that the zh route (3x more training data) is much less sensitive to loss-function and optimization tweaks than en — the interventions that transformed the data-starved en route have much less to fix on the data-rich one.
+
+### Backlog item 7 — new model candidates: BGE-large-en/zh-v1.5, multilingual-e5-large
+
+Added `bge_large_en`/`bge_large_zh`/`me5_large` to `code/models.py`'s registry. Tested each under the best-known recipe for its route (en: DB-Loss, lr=5e-5, warmup=0.15; zh: weighted BCE, lr=2e-5) — no zh→en warm-start attempted since these are different architectures from BGE-M3 and the checkpoint wouldn't load.
+
+**Reproduce**: `python -u train.py --model_key {bge_large_en,bge_large_zh,me5_large} --context_mode none --loss {db,weighted_bce} --lr {5e-5,2e-5} --lang_subset {en,zh} --epochs 15 --batch_size 8 [--warmup_ratio 0.15] --run_name ...`
+
+| Model | Route | Dev tuned macro | vs. current BGE-M3 champion |
+|---|---|---|---|
+| BGE-large-en-v1.5 | en | 0.8423 | well below (M1 single-run: 0.8627; N1 seqFT: 0.9002) |
+| BGE-large-zh-v1.5 | zh | 0.8612 | below F3's 0.8692 |
+| multilingual-e5-large | en | 0.8509 | below M1's 0.8627 |
+| multilingual-e5-large | zh | 0.8693 | **essentially tied with F3's 0.8692** (noise-level, +0.0001) |
+
+**None beats BGE-M3 on either route.** multilingual-e5-large ties on zh but doesn't clearly win, and BGE-M3 already has the packaging/size story worked out (fp16) — no reason to switch. **Not pursuing further seeds/ensembles of these candidates** — the gap for en is too large to close with ensembling alone (BGE-M3's zh→en-transfer advantage is architecture-specific, since only BGE-M3 had a same-architecture zh checkpoint to warm-start from). **BGE-M3 remains the model for both routes.**
