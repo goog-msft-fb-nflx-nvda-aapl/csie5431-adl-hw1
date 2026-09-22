@@ -939,3 +939,11 @@ Per-class detail is clean too: `Confirm_Order` f1@tuned=1.000, `Compare_Competit
 Both metrics improve on both splits over the DB-Loss-ensemble champion (public 0.8352/0.8470 → 0.8405/0.8527; dev 0.8743/0.8716 → 0.8756/0.8760) — dev and public test agree again, the pattern we trust. **Adopting zh→en sequential fine-tuning (DB-Loss, lr=5e-5, warmup=0.15, warm-started from the zh route) as the new en-route standing recipe, 4-seed ensemble as the standing champion.**
 
 **Backlog item 6 (translate-train) reassessed**: the research explicitly framed translate-train as "try only if the no-MT zh→en transfer underperforms" — it didn't; it's now the best result of the session. Deprioritizing translate-train accordingly (still available if this plateaus) and moving to item 7 (new model candidates) next.
+
+### Side-check before item 7 — does the improved recipe (DB-Loss + warmup=0.15) help the zh route too?
+
+The zh route (F3) never got the recipe upgrades that transformed en (items 3–4) — cheap to check before moving on, given how well it worked for en.
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss db --lr 2e-5 --lang_subset zh --epochs 15 --batch_size 8 --warmup_ratio 0.15 --run_name O1_bgem3_zh_dbloss`.
+
+**Result — a wash, not a clear win**: dev tuned macro=0.8654 vs. F3's (weighted BCE) 0.8692 — slightly *worse*. Public-zh tuned macro=0.8598 vs. F3's 0.8513 — better there. Mixed signal, and dev (our selection criterion) favors keeping F3. **Not adopting — F3 (weighted BCE, lr=2e-5, no warmup change) remains the zh route.** Consistent with the session's repeated finding that the zh route (3x more training data) is much less sensitive to loss-function and optimization tweaks than en — the interventions that transformed the data-starved en route have much less to fix on the data-rich one.
