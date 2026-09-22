@@ -17,4 +17,7 @@ MODEL_REGISTRY = {
         hf_id="/home/jtan/adl_hw1/domain_adapted/roberta_multiwoz_en",
         lang_scope="en", source="domain-adapted-multiwoz-mlm",
     ),
+    "bge_large_en": dict(hf_id="BAAI/bge-large-en-v1.5", lang_scope="en", source="extension"),
+    "bge_large_zh": dict(hf_id="BAAI/bge-large-zh-v1.5", lang_scope="zh", source="extension"),
+    "me5_large": dict(hf_id="intfloat/multilingual-e5-large", lang_scope="all", source="extension"),
 }
