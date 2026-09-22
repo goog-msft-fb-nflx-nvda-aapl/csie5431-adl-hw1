@@ -962,3 +962,47 @@ Added `bge_large_en`/`bge_large_zh`/`me5_large` to `code/models.py`'s registry. 
 | multilingual-e5-large | zh | 0.8693 | **essentially tied with F3's 0.8692** (noise-level, +0.0001) |
 
 **None beats BGE-M3 on either route.** multilingual-e5-large ties on zh but doesn't clearly win, and BGE-M3 already has the packaging/size story worked out (fp16) — no reason to switch. **Not pursuing further seeds/ensembles of these candidates** — the gap for en is too large to close with ensembling alone (BGE-M3's zh→en-transfer advantage is architecture-specific, since only BGE-M3 had a same-architecture zh checkpoint to warm-start from). **BGE-M3 remains the model for both routes.**
+
+### Backlog item 9 (lower-priority tier, given items 1–7 already solved the core problem — light pass) — sigmoidF1 loss
+
+Item 8 (compliance-risk models) was already resolved during the initial research synthesis (jina-v3, Qwen3-Embedding, mE5-instruct excluded — see the backlog note in `TODO.md`). Of item 9's three sub-options (SetFit reimplementation, sigmoidF1, PET/cloze), implemented only the cheapest — **sigmoidF1** (Bénédict et al. 2022, a smooth differentiable F1 surrogate: soft TP/FP/FN computed from a temperature-scaled sigmoid over the batch, loss = 1 − mean soft-F1 across classes) — as `code/losses.py`'s `SigmoidF1Loss` (`--loss sigmoidf1`). SetFit and PET were skipped: both need meaningfully more engineering (SetFit ~100 lines of contrastive-pair training reimplemented from scratch, since `sentence-transformers`/`setfit` aren't on the allowed-package list) and both explicitly target the rare-class weakness that items 4–5 already solved (`Too_Expensive`/`Compare_Competitor` are no longer weak).
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss sigmoidf1 --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --warmup_ratio 0.15 --init_from_run F3_bgem3_zh --run_name Q1_bgem3_en_sigmoidf1` (same zh-warm-start setup as item 5, just swapping the loss).
+
+**Result — new best single run of the entire session**: `best_epoch=0` again (same pattern as N1 — the zh-warm-started checkpoint peaks almost immediately, then degrades with more en-specific gradient steps). Flat-0.5 macro=0.8804 (highest flat-0.5 number seen all session), **tuned dev macro=0.9109** (vs. N1's 0.9002), public-en tuned macro=0.8082 (vs. N1's 0.7981, slightly better). **`Too_Expensive` f1@tuned = 1.000.**
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| N1 (zh-warm-start + DB-Loss), single run | 0.9002 | 0.7981 |
+| **Q1 (zh-warm-start + sigmoidF1), single run** | **0.9109** | **0.8082** |
+
+Multi-seeding before adopting (same discipline as every other finding) — 3 more seeds queued, `--epochs 8` (capped given the established epoch-0-peaks pattern for zh-warm-started runs).
+
+**Multi-seed check**: flat-0.5 macro 0.8553, 0.8158, 0.8499 across 3 more seeds — solid but not uniformly as high as Q1's single-run 0.8804 (the same "one great seed, ensemble regresses toward a lower mean" pattern seen with every other backlog item). **4-way sigmoidF1 ensemble: dev tuned=0.8940, public-en tuned=0.8045 — both *below* the standing 4-way DB-Loss champion (0.8990/0.8186).** Tried one more combination — **all 8 checkpoints merged** (4× DB-Loss-seqFT + 4× sigmoidF1-seqFT): dev tuned=0.9007 (+0.0017 vs. standing champion), public-en tuned=0.8164 (−0.0022) — both changes smaller than the measured seed-noise std, **not a reliable improvement either way**.
+
+**Decision: keep the item-5 4-way DB-Loss ensemble as the standing en-route champion.** sigmoidF1 individually can hit a higher single-run peak (0.9109, the session's best single number) but doesn't translate into a better ensemble — consistent with the broader lesson this session has repeatedly demonstrated: a good single run is not the same thing as a good ensemble member, and only actual multi-seed + ensemble evaluation (never a single number) should drive an adoption decision.
+
+## Round-2 backlog — complete (all 9 items resolved)
+
+Every item from the round-2 Deep Research backlog has been run, documented, and either adopted or explicitly ruled out with evidence:
+
+1. Multi-seed reliability check — confirmed the literature's warning on our own data, fixed via ensembling (not just diagnosed).
+2. LP-FT — real single-run gain, doesn't help as ensemble diversity, not adopted.
+3. Stability recipe — warmup=0.15 adopted (real gain), layer re-init rejected (matches a literature caveat for extreme small-data).
+4. Distribution-Balanced Loss — adopted, fixed the session's most persistent weak class (`Too_Expensive`: 0.4–0.67 → 0.909+).
+5. zh→en sequential fine-tuning — **adopted as the standing champion's core recipe**, biggest single lever of round 2.
+6. Translate-train — deprioritized per its own gating condition (item 5 didn't underperform).
+7. New model candidates (BGE-large-en/zh-v1.5, multilingual-e5-large) — none beat BGE-M3, not adopted.
+8. Compliance-risk models (jina-v3, Qwen3-Embedding, mE5-instruct) — excluded per the research's compliance analysis.
+9. sigmoidF1 loss — strong single-run peak, doesn't beat the standing ensemble, not adopted; SetFit/PET skipped as the problem they'd target (rare classes) is already solved.
+
+### Final state of this session
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | **0.8405** | **0.8527** |
+| Dev | **0.8756** | **0.8760** |
+
+Architecture: **language-routed BGE-M3** — zh route: `F3_bgem3_zh` (single checkpoint, weighted BCE, lr=2e-5); en route: 4-way ensemble of `N1_bgem3_en_seqft_zh` + `N2_bgem3_en_seqft_seed{1,2,3}` (DB-Loss, lr=5e-5, warmup=0.15, warm-started from the zh route's checkpoint, capped at 6 epochs since later epochs hurt).
+
+**Not yet done**: `predict_final.py`/`package_final.py` still only support single-checkpoint routes — the 4-way en ensemble isn't packageable for `run.sh` yet. This is now the top item for actually shipping this candidate, separate from the research backlog.
