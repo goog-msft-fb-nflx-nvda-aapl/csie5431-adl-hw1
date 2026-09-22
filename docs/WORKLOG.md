@@ -872,4 +872,40 @@ Warmup alone (0.15 vs. 0.06) is a real single-run improvement (+0.018 dev vs. ba
 
 **Decision**: every ensemble variant tried this round (6-way+LP-FT, 6-way+L3, 4-way-warmup15, 9-way-all) lands within ~0.004 of the standing 5-way champion's dev score — smaller than the ~0.005 seed-noise std we measured earlier, i.e. **not a reliable difference**. The 5-way remains clearly ahead on public test (0.8134 vs. 0.788–0.807 for every alternative) — a wider, more consistent margin. Given dev doesn't discriminate reliably here, keeping the public-test-favored, already-adopted 5-way ensemble as the standing champion rather than switching on noise. **Warmup=0.15 is still logged as a real single-run improvement** (item 3's headline finding) and worth revisiting later (e.g. as the base recipe for a fresh multi-seed batch, rather than mixed post-hoc with the original recipe's seeds).
 
-Continuing down the round-2 backlog: DB-Loss next, then zh→en transfer / translate-train, then new model candidates.
+### Backlog item 4 — Distribution-Balanced Loss (class-balanced weighting + negative-tolerant regularization, Wu et al. 2020 / Huang et al. 2021 CB-NTR)
+
+Implemented `DistributionBalancedLoss` in `code/losses.py` (`--loss db`): (a) class-balanced positive-term weighting using the "effective number of samples" formula (Cui et al. 2019, `(1-β)/(1-β^n_k)`, β=0.9999) — a principled upgrade over our existing `sqrt((N-N_k)/N_k)` weighted-BCE; (b) negative-tolerant regularization — a per-class margin `v_k = α·log((N-N_k)/N_k)` (α=0.3) subtracted from the logit before computing the negative-term loss, which shifts the effective decision boundary up for rare classes so their overwhelming negative examples contribute proportionally less loss. Smoke-tested on synthetic data before the real run (loss computes, gradients flow).
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss db --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --warmup_ratio 0.15 --run_name M1_bgem3_en_dbloss` (best recipe found so far: lr=5e-5, warmup=0.15, no reinit).
+
+**Result — the best single run of the whole session, and the first time dev and public test both improve together instead of trading off:**
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Single-seed baseline (I2, ASL) | 0.8445 | 0.7896 |
+| Best prior single run (L3, ASL + warmup=0.15) | 0.8623 | 0.7921 |
+| **DB-Loss + warmup=0.15 (M1)** | **0.8627** (~tied with L3) | **0.8036** (+0.0115 over L3, +0.014 over baseline) |
+
+Per-class breakdown shows exactly the targeted effect: **`Too_Expensive` f1@tuned = 0.909** (was 0.40–0.67 across every prior config this session — this was consistently the weakest class) and `Doubt` f1@tuned = 0.828. The negative-tolerant regularization is doing precisely what it's designed for on precisely the classes it targets.
+
+**Multi-seed check** (4 more seeds, `M2_bgem3_en_dbloss_seed{1,2,3,4}`): tuned dev macro 0.8775, 0.8674, 0.8506, 0.8653, plus M1's own 0.8627 — noticeably tighter and uniformly higher than the ASL recipe's seed spread was. **5-way DB-Loss ensemble**:
+
+**Reproduce**: `python ensemble_eval.py --runs M1_bgem3_en_dbloss M2_bgem3_en_dbloss_seed1 M2_bgem3_en_dbloss_seed2 M2_bgem3_en_dbloss_seed3 M2_bgem3_en_dbloss_seed4 --lang en`
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| ASL 5-way ensemble (prior champion) | 0.8714 | 0.8134 |
+| **DB-Loss 5-way ensemble** | **0.8985** (+0.0271, well outside the ~0.005 noise band) | 0.8108 (essentially tied, −0.0026) |
+
+**Unlike every prior ensemble variant this round (all landed within noise), this is a decisive win on dev with public test staying flat rather than dropping** — the pattern we want to see before trusting a change (both signals agree, or at worst one stays neutral).
+
+### Candidate C updated again — zh: F3 (unchanged) + en: 5-seed DB-Loss ensemble
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | 0.8352 | 0.8470 |
+| Dev | **0.8743** | **0.8716** |
+
+Public test is essentially flat vs. the prior ASL-ensemble champion (0.8372/0.8466 → 0.8352/0.8470, a wash); dev improves (0.8690/0.8696 → 0.8743/0.8716). Combined with the clean per-class story (the session's most persistent weak spot, `Too_Expensive`, is now solid), **adopting the DB-Loss ensemble as the new en-route standing champion.**
+
+Continuing down the round-2 backlog: zh→en transfer / translate-train next, then new model candidates (BGE-large-en/zh-v1.5, multilingual-e5-large).

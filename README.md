@@ -52,6 +52,6 @@ bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
 |---|---|---|
 | A — simple, single checkpoint/route | 0.8057 / 0.8238 | 0.8502 / 0.8556 |
 | B — ensembled + LR-tuned | 0.8218 / 0.8316 | 0.8335 / 0.8442 |
-| C — BGE-M3, zh single checkpoint + en 5-seed ensemble (2026-09-23) | **0.8372 / 0.8466** | **0.8690 / 0.8696** |
+| C — BGE-M3, zh single checkpoint + en 5-seed DB-Loss ensemble (2026-09-23) | 0.8352 / 0.8470 | **0.8743 / 0.8716** |
 
 Challenge grading tier is Macro-F1 ≥ 0.82, Micro-F1 ≥ 0.83 — **Candidate C clears it with real margin on both metrics, on both the dev split and the public-test diagnostic**, with a clean (non-public-test-driven) selection methodology. The en-route ensemble came from a multi-seed reliability check (round-2 Deep Research survey flagged the small en dev split as unreliable for single-run comparisons — confirmed on our own data, then fixed via seed-ensembling rather than just noted). See `docs/TODO.md` for the active research backlog and remaining open questions (whether a 568M-param retrieval model is in scope; B's selection-methodology caveat; en-route ensemble isn't packageable for `run.sh` yet). `docs/WORKLOG.md` has the full session log and `docs/REPRODUCE.md` the consolidated reproduction commands.
