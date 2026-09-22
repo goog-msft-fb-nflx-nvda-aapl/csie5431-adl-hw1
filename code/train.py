@@ -85,6 +85,7 @@ def main():
     ap.add_argument("--train_path", default="/home/jtan/adl_hw1/data/train_split.jsonl")
     ap.add_argument("--dev_path", default="/home/jtan/adl_hw1/data/dev_split.jsonl")
     ap.add_argument("--aug_path", default=None, help="extra train-only examples (e.g. back-translated), never added to dev")
+    ap.add_argument("--lp_epochs", type=int, default=0, help="LP-FT: freeze backbone for this many epochs (train head only), then unfreeze for the rest")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -101,6 +102,12 @@ def main():
     ).to(device)
     if model.config.pad_token_id is None:
         model.config.pad_token_id = tokenizer.pad_token_id
+
+    if args.lp_epochs > 0:
+        backbone = getattr(model, model.base_model_prefix)
+        for p in backbone.parameters():
+            p.requires_grad = False
+        print(f"LP-FT: backbone frozen for the first {args.lp_epochs} epoch(s) (head-only training)", flush=True)
 
     train_examples = filter_lang(load_jsonl(args.train_path), args.lang_subset)
     if args.aug_path:
@@ -156,6 +163,12 @@ def main():
     t0 = time.time()
 
     for epoch in range(args.epochs):
+        if args.lp_epochs > 0 and epoch == args.lp_epochs:
+            backbone = getattr(model, model.base_model_prefix)
+            for p in backbone.parameters():
+                p.requires_grad = True
+            print(f"LP-FT: backbone unfrozen at epoch={epoch}, switching to full fine-tuning", flush=True)
+
         model.train()
         epoch_loss = 0.0
         for batch in train_loader:

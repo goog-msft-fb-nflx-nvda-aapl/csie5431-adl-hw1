@@ -841,4 +841,12 @@ The ensemble beats not just the mean but the *best individual seed* on both spli
 
 **Not yet done**: `predict_final.py`/`package_final.py` still only support single-checkpoint routes — a 5-model en ensemble isn't packageable for `run.sh` yet, same gap flagged earlier for Candidate B. Will need a small extension if this ends up being the submitted config.
 
-Continuing down the round-2 backlog next: LP-FT, then the stability recipe (top-layer re-init + longer warmup), then DB-Loss, then zh→en transfer / translate-train.
+### Backlog item 2 — LP-FT (linear-probe-then-fine-tune)
+
+Added `--lp_epochs N` to `train.py`: freezes everything under `model.base_model_prefix` (the backbone) for the first N epochs (classifier head trains alone), then unfreezes for the rest. Implementation note: kept the same `AdamW` optimizer instance across the freeze/unfreeze transition rather than rebuilding it — a frozen param's `requires_grad=False` just means it never receives a gradient, so its Adam moment state stays uninitialized until unfrozen; no need to touch the optimizer/scheduler at the transition.
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss asl --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --lp_epochs 5 --run_name K1_bgem3_en_lpft5` (5 probe epochs + 10 fine-tune epochs, same total budget and LR as the en champion recipe).
+
+**Result**: LP-FT alone beats the single-seed baseline on both splits — dev tuned macro 0.8523 vs. I2's 0.8445 (+0.0078), public-test-en tuned macro 0.7942 vs. 0.7896 (+0.0046). A real, if modest, signal (roughly on the edge of the seed-noise band measured above, so suggestive rather than conclusive from one run). **Tried adding it as a 6th member of the 5-seed ensemble for extra methodological diversity** (not just another seed of the same recipe) — **didn't help**: 6-way ensemble dev tuned=0.8703, public-en tuned=0.8087, both slightly *below* the 5-way ensemble's 0.8714/0.8134. **Not adopting LP-FT for the standing candidate** — the 5-seed vanilla ensemble remains best. Keeping the LP-FT recipe/flag in the codebase since it's a genuine (if marginal) single-run improvement and may be worth revisiting combined with other backlog items (e.g. the stability recipe below).
+
+Continuing down the round-2 backlog: stability recipe (top-layer re-init + longer warmup) next, then DB-Loss, then zh→en transfer / translate-train, then new model candidates.
