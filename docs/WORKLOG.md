@@ -801,3 +801,44 @@ Small dev gain (+0.0053), small public-test loss (−0.0054) — selecting on `d
 **Both metrics now clear the challenge tier (0.82/0.83) on both splits** — public test macro +0.0064, micro +0.0074 above the bar; dev clears comfortably. This is the first config this session where the public-test diagnostic itself (not just dev) clears challenge tier on a *cleanly-selected* candidate (single checkpoint per route, no ensembling, LR chosen on dev only) — Candidate B cleared challenge tier on public test earlier but via the flagged repeated-public-test-comparison selection process; this result doesn't have that caveat.
 
 **New current best result, this session: public test macro=0.8264/micro=0.8374, dev macro=0.8625/micro=0.8634.**
+
+## 2026-09-23 (cont'd) — Round 2 Deep Research read + multi-seed reliability check → biggest single gain of the session
+
+Sent a follow-up Deep Research prompt (`docs/survey/deep_research_prompt_r2.md`) after being pushed to survey deeper (real papers/GitHub/HF, not just blog-level summaries), specifically targeting the en-route bottleneck. Two responses landed (Gemini extended thinking + a Perplexity/Compass-style source), both read and synthesized into a 9-item prioritized backlog in `TODO.md`. Working through it one item at a time per explicit instruction, starting with the literature's flagged **prerequisite**: our en `dev` split is only 117 examples, and both sources warned that single-run dev comparisons at that scale are unreliable enough to invert config rankings.
+
+### Multi-seed check on the en-route champion (I2, BGE-M3 lr=5e-5)
+
+**Reproduce**: `for seed in 1 2 3 4; do python train.py --model_key bgem3 --context_mode none --loss asl --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --seed $seed --run_name J1_bgem3_en_seed$seed; done` (plus the original seed=42 run, I2).
+
+**Result — the literature's warning was correct on our own data**: tuned dev macro across 5 seeds — 0.8387, 0.8505, 0.8534, 0.8493, 0.8445(orig) — mean≈0.847, std≈0.005, top-to-bottom spread≈0.015. **The earlier "lr=5e-5 beats lr=1e-4" conclusion (0.8445 vs. 0.8392, a 0.0053 gap) is the same size as this seed-to-seed noise** — not something a single-run comparison could have distinguished from chance. Flagging this plainly: the LR-sweep "win" logged earlier this session should be read as "within noise of the alternative," not a confirmed result.
+
+**Rather than just noting the problem, fixed it the same way the literature recommends** (multi-seed averaging) — and since all 5 checkpoints were already trained, this was free: ensembled all 5 seeds' logits (`code/ensemble_eval.py`, already built for exactly this).
+
+**Reproduce**: `python ensemble_eval.py --runs I2_bgem3_en_lr5e-5 J1_bgem3_en_seed1 J1_bgem3_en_seed2 J1_bgem3_en_seed3 J1_bgem3_en_seed4 --lang en`
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Best single seed (I2, seed=42) | 0.8445 | 0.7896 |
+| Mean of 5 individual seeds | ~0.847 | — |
+| **5-seed ensemble** | **0.8714** | **0.8134** |
+
+The ensemble beats not just the mean but the *best individual seed* on both splits, and by a wide margin on public test (+0.024 over the best single seed) — a real variance-reduction effect, not a lucky pick. This is now the standard playbook for the en route going forward: seed-ensemble rather than trust a single run, especially when comparing close configs.
+
+### Candidate C updated again — zh: F3 (unchanged, single checkpoint) + en: 5-seed ensemble of I2/J1×4
+
+**Reproduce**: score the 5-seed-averaged en probabilities against F3's zh probabilities via `route_combine_eval.py`-equivalent logic (see `code/ensemble_eval.py` pattern; a dedicated multi-checkpoint route-combine script doesn't exist yet, computed inline this run).
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | **0.8372** | **0.8466** |
+| Dev | **0.8690** | **0.8696** |
+
+| Grading tier | Bar | Margin |
+|---|---|---|
+| Challenge | 0.82 / 0.83 | **public test: +0.0172 macro, +0.0166 micro; dev: +0.049 macro, +0.0396 micro** |
+
+**Biggest single jump this session** — both splits now clear the challenge tier with real margin, not a razor-thin one. Came directly from taking the reliability literature seriously rather than treating the multi-seed check as a formality: the "fix" (ensembling checkpoints we already had) cost zero additional training.
+
+**Not yet done**: `predict_final.py`/`package_final.py` still only support single-checkpoint routes — a 5-model en ensemble isn't packageable for `run.sh` yet, same gap flagged earlier for Candidate B. Will need a small extension if this ends up being the submitted config.
+
+Continuing down the round-2 backlog next: LP-FT, then the stability recipe (top-layer re-init + longer warmup), then DB-Loss, then zh→en transfer / translate-train.
