@@ -849,4 +849,23 @@ Added `--lp_epochs N` to `train.py`: freezes everything under `model.base_model_
 
 **Result**: LP-FT alone beats the single-seed baseline on both splits — dev tuned macro 0.8523 vs. I2's 0.8445 (+0.0078), public-test-en tuned macro 0.7942 vs. 0.7896 (+0.0046). A real, if modest, signal (roughly on the edge of the seed-noise band measured above, so suggestive rather than conclusive from one run). **Tried adding it as a 6th member of the 5-seed ensemble for extra methodological diversity** (not just another seed of the same recipe) — **didn't help**: 6-way ensemble dev tuned=0.8703, public-en tuned=0.8087, both slightly *below* the 5-way ensemble's 0.8714/0.8134. **Not adopting LP-FT for the standing candidate** — the 5-seed vanilla ensemble remains best. Keeping the LP-FT recipe/flag in the codebase since it's a genuine (if marginal) single-run improvement and may be worth revisiting combined with other backlog items (e.g. the stability recipe below).
 
-Continuing down the round-2 backlog: stability recipe (top-layer re-init + longer warmup) next, then DB-Loss, then zh→en transfer / translate-train, then new model candidates.
+### Backlog item 3 — stability recipe: top-layer re-init + longer warmup
+
+Added `--reinit_layers N` (re-initializes the top N transformer encoder layers via the model's own `_init_weights`, found generically at `backbone.encoder.layer` for BERT/RoBERTa/XLM-RoBERTa-family architectures including BGE-M3) and `--warmup_ratio` (was hardcoded at 0.06, now configurable) to `train.py`.
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss asl --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --reinit_layers {2,4} --warmup_ratio 0.15 --run_name ...` and a `--warmup_ratio 0.15`-only control with no reinit.
+
+**Result — longer warmup helps, layer re-init does not (matches a caveat the research itself flagged):**
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| Baseline (warmup=0.06, no reinit — I2) | 0.8445 | 0.7896 |
+| reinit=2, warmup=0.15 (L1) | 0.8369 | — |
+| reinit=4, warmup=0.15 (L2) | 0.8337 | — |
+| **warmup=0.15, no reinit (L3)** | **0.8623** | 0.7921 |
+
+Warmup alone (0.15 vs. 0.06) is a real single-run improvement (+0.018 dev vs. baseline) — the **best single run found this session**, ahead of even the standing champion I2 and every individual multi-seed run. Layer re-initialization *hurts* when added on top of the longer warmup (0.8369/0.8337 vs. 0.8623 without it) — this matches a caveat one of the round-2 sources flagged explicitly (arXiv:2205.01307: re-init and Mixout have been reported to fail on very small, few-hundred-example datasets) rather than contradicting the literature; our 627-example en route is squarely in that regime. **Not adopting layer re-init. Adopting the longer warmup (0.15) as the new base recipe going forward.**
+
+**Ensemble test**: tried L3 as a 6th member alongside the existing 5-seed ensemble (same pattern as the LP-FT test) — again **didn't beat the 5-way ensemble** (6-way: dev=0.8671, public-en=0.8076 vs. the 5-way's 0.8714/0.8134). Consistent finding across two different "improved single run" attempts now: a good single run doesn't automatically improve the ensemble by joining it, because it correlates too much with the existing members rather than correcting their specific errors. **Testing whether warmup=0.15 is a genuinely better recipe (not just a lucky single run) by seed-ensembling it the same way as the original recipe** — 3 more seeds queued, in progress.
+
+Continuing down the round-2 backlog: DB-Loss next, then zh→en transfer / translate-train, then new model candidates.
