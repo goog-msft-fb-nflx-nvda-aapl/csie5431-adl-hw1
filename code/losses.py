@@ -60,6 +60,24 @@ class DistributionBalancedLoss(nn.Module):
         return -(loss_pos + loss_neg).sum(dim=-1).mean()
 
 
+class SigmoidF1Loss(nn.Module):
+    """Benedict et al. 2022, https://arxiv.org/abs/2108.10566 - smooth F1 surrogate."""
+
+    def __init__(self, beta=1.0, eta=0.0, eps=1e-8):
+        super().__init__()
+        self.beta = beta
+        self.eta = eta
+        self.eps = eps
+
+    def forward(self, logits, targets):
+        p = torch.sigmoid(self.beta * (logits - self.eta))
+        tp = (p * targets).sum(dim=0)
+        fp = (p * (1 - targets)).sum(dim=0)
+        fn = ((1 - p) * targets).sum(dim=0)
+        soft_f1 = 2 * tp / (2 * tp + fp + fn + self.eps)
+        return 1 - soft_f1.mean()
+
+
 def get_loss_fn(name, pos_weight=None, pos_counts=None, n_total=None):
     if name == "bce":
         return nn.BCEWithLogitsLoss()
@@ -69,4 +87,6 @@ def get_loss_fn(name, pos_weight=None, pos_counts=None, n_total=None):
         return AsymmetricLoss()
     if name == "db":
         return DistributionBalancedLoss(pos_counts, n_total)
+    if name == "sigmoidf1":
+        return SigmoidF1Loss()
     raise ValueError(name)

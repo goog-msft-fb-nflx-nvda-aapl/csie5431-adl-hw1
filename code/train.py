@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--model_key", required=True, choices=list(MODEL_REGISTRY.keys()))
     ap.add_argument("--context_mode", required=True, choices=["none", "lastk", "full", "headtail"])
     ap.add_argument("--k", type=int, default=2)
-    ap.add_argument("--loss", default="bce", choices=["bce", "weighted_bce", "asl", "db"])
+    ap.add_argument("--loss", default="bce", choices=["bce", "weighted_bce", "asl", "db", "sigmoidf1"])
     ap.add_argument("--lang_subset", default="all", choices=["all", "zh", "en"])
     ap.add_argument("--balance_lang", action="store_true")
     ap.add_argument("--max_length", type=int, default=512)
