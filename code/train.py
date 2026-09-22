@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--model_key", required=True, choices=list(MODEL_REGISTRY.keys()))
     ap.add_argument("--context_mode", required=True, choices=["none", "lastk", "full", "headtail"])
     ap.add_argument("--k", type=int, default=2)
-    ap.add_argument("--loss", default="bce", choices=["bce", "weighted_bce", "asl"])
+    ap.add_argument("--loss", default="bce", choices=["bce", "weighted_bce", "asl", "db"])
     ap.add_argument("--lang_subset", default="all", choices=["all", "zh", "en"])
     ap.add_argument("--balance_lang", action="store_true")
     ap.add_argument("--max_length", type=int, default=512)
@@ -150,12 +150,16 @@ def main():
     )
 
     pos_weight = None
-    if args.loss == "weighted_bce":
+    pos_counts_arr = None
+    if args.loss in ("weighted_bce", "db"):
         n = len(train_examples)
-        pos_counts = np.array([sum(1 for e in train_examples if l in e["labels"]) for l in LABELS])
-        pos_counts = np.clip(pos_counts, 1, None)
-        pos_weight = torch.tensor(np.sqrt((n - pos_counts) / pos_counts), dtype=torch.float).to(device)
-    loss_fn = get_loss_fn(args.loss, pos_weight=pos_weight)
+        pos_counts_arr = np.array([sum(1 for e in train_examples if l in e["labels"]) for l in LABELS])
+        pos_counts_arr = np.clip(pos_counts_arr, 1, None)
+        if args.loss == "weighted_bce":
+            pos_weight = torch.tensor(np.sqrt((n - pos_counts_arr) / pos_counts_arr), dtype=torch.float).to(device)
+    loss_fn = get_loss_fn(args.loss, pos_weight=pos_weight, pos_counts=pos_counts_arr, n_total=len(train_examples))
+    if args.loss == "db":
+        loss_fn = loss_fn.to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     total_steps = len(train_loader) * args.epochs
