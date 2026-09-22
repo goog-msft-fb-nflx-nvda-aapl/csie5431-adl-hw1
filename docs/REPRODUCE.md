@@ -61,26 +61,28 @@ python ensemble_eval.py --runs C3b_roberta_none_asl_en_ep20 D1_roberta_asl_en_lr
 ```
 Result: public test macro=0.8218/micro=0.8316; dev macro=0.8335/micro=0.8442. (`ensemble_eval.py` writes its probabilities/thresholds to `/tmp/ensemble_<lang>_*` — there is no packaged `run.sh` support for a multi-checkpoint ensemble yet; only single-checkpoint routes are packageable via `package_final.py` today.)
 
-## 3. Candidate C — `BAAI/bge-m3`, single checkpoint per route, no ensembling (current leading candidate, best number on both dev and public test, cleanest selection methodology)
+## 3. Candidate C — `BAAI/bge-m3`, single checkpoint per route, no ensembling (current leading candidate, clears challenge tier on both dev and public test, cleanest selection methodology)
+
+Note: an LR sweep (2026-09-23) found lr=5e-5 beats lr=1e-4 for the en route specifically (zh stayed at the original lr=2e-5 — a zh sweep at 5e-5/1e-4 was tried and both were worse). Selected by `dev` score only, not public-test comparisons.
 
 ```bash
 python train.py --model_key bgem3 --context_mode none --loss weighted_bce \
   --lang_subset zh --epochs 15 --batch_size 8 --run_name F3_bgem3_zh
-python train.py --model_key bgem3 --context_mode none --loss asl --lr 1e-4 \
-  --lang_subset en --epochs 15 --batch_size 8 --run_name F4_bgem3_en
+python train.py --model_key bgem3 --context_mode none --loss asl --lr 5e-5 \
+  --lang_subset en --epochs 15 --batch_size 8 --run_name I2_bgem3_en_lr5e-5
 
 python threshold_tune.py --run_name F3_bgem3_zh
-python threshold_tune.py --run_name F4_bgem3_en
+python threshold_tune.py --run_name I2_bgem3_en_lr5e-5
 python predict_and_eval.py --run_name F3_bgem3_zh
-python predict_and_eval.py --run_name F4_bgem3_en
-python route_combine_eval.py --zh_run F3_bgem3_zh --en_run F4_bgem3_en
+python predict_and_eval.py --run_name I2_bgem3_en_lr5e-5
+python route_combine_eval.py --zh_run F3_bgem3_zh --en_run I2_bgem3_en_lr5e-5
 ```
-Result: public test macro=0.8260/micro=0.8273; dev macro=0.8605/micro=0.8618.
+Result: public test macro=0.8264/micro=0.8374; dev macro=0.8625/micro=0.8634 — **clears the challenge tier (0.82/0.83) on both metrics, on both splits.**
 
 **Packaging Candidate C for submission** (fp16 needed — fp32 would be ~4.4GB combined, over the 4GB download budget; fp16 is ~2.2GB combined):
 ```bash
 python package_final.py --run_name F3_bgem3_zh --out_dir ../models/zh --fp16
-python package_final.py --run_name F4_bgem3_en --out_dir ../models/en --fp16
+python package_final.py --run_name I2_bgem3_en_lr5e-5 --out_dir ../models/en --fp16
 ```
 Then `run.sh`/`download.sh` at the repo root use `../models/zh` and `../models/en` exactly as for Candidate A (single checkpoint per route — this is why C is packageable today and B currently isn't).
 

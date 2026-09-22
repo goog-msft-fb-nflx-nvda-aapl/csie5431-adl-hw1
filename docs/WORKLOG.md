@@ -764,3 +764,40 @@ Essentially tied with the un-augmented baseline at the same learning rate — au
 **Back-translation augmentation is now 2-for-2 neutral-to-negative** — worse than the un-augmented baseline at both learning rates tried, clearly so at lr=5e-5 (which is otherwise the strongest en config found this session). **Not adopting back-translation augmentation for the en route.** Combined with the MultiWOZ domain-adaptation result above, both of the previously-TA-gated techniques we got explicit permission to assume were allowed turned out to be neutral-or-negative on this specific dataset once actually tested — a genuine, evidence-backed finding, not a missed opportunity. Plausible shared explanation for both: this dataset's real bottleneck on the en route looks like it's the small *label*-side signal (rare classes, only 627 examples) rather than a lack of raw English text or an out-of-domain starting representation — techniques that add more *unlabeled* text or noisy label-preserving paraphrases don't address that; more/better-targeted labeled examples might, but that's not something we're allowed to add.
 
 **Current standing champions unchanged**: BGE-M3 remains the strongest en (and zh) route found this session; RoBERTa (D1, lr=5e-5, no augmentation, no domain adaptation) remains the strongest RoBERTa-based en route if BGE-M3's size/scope questions come back unfavorable.
+
+## 2026-09-23 — BGE-M3 LR sweep (never done before — BGE-M3 was using an untuned default LR for zh, and en's borrowed-from-RoBERTa 1e-4)
+
+**Reproduce**: `for lr in 5e-5 1e-4; do python train.py --model_key bgem3 --context_mode none --loss weighted_bce --lang_subset zh --epochs 15 --batch_size 8 --lr $lr --run_name I1_bgem3_zh_lr$lr; done` and the en equivalent with `--loss asl` at lr ∈ {5e-5, 2e-4}.
+
+**Selection discipline note**: picked the winner by `dev` score only, not by repeatedly checking `public_test_gold.csv` — deliberately, to keep this candidate's clean selection methodology intact (unlike Candidate B's LR sweep, which used public-test comparisons and is flagged as a compliance risk).
+
+**Results**:
+
+| Run | Dev flat-0.5 macro |
+|---|---|
+| zh lr=5e-5 | 0.8334 (worse than the 2e-5 baseline's 0.8542) |
+| zh lr=1e-4 | 0.8336 (worse) |
+| **en lr=5e-5** | **0.7927 (better than the 1e-4 baseline's 0.7750)** |
+| en lr=2e-4 | 0.5259 — diverged, too high an LR for this model size |
+
+zh: 2e-5 (the original default) remains the best learning rate — confirms the earlier finding that the zh route (more training data) is much less LR-sensitive than en. **en: lr=5e-5 is a new best**, tuned:
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| BGE-M3 en, lr=1e-4 (F4, previous champion) | 0.8392 | 0.7950 |
+| **BGE-M3 en, lr=5e-5 (I2, new champion)** | **0.8445** | 0.7896 |
+
+Small dev gain (+0.0053), small public-test loss (−0.0054) — selecting on `dev` per our stated methodology, so lr=5e-5 is adopted as the new en-route champion for Candidate C.
+
+### Candidate C updated — zh: F3 (bgem3, lr=2e-5, unchanged) + en: I2 (bgem3, lr=5e-5, new)
+
+**Reproduce**: `python route_combine_eval.py --zh_run F3_bgem3_zh --en_run I2_bgem3_en_lr5e-5`
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | **0.8264** | **0.8374** |
+| Dev | **0.8625** | **0.8634** |
+
+**Both metrics now clear the challenge tier (0.82/0.83) on both splits** — public test macro +0.0064, micro +0.0074 above the bar; dev clears comfortably. This is the first config this session where the public-test diagnostic itself (not just dev) clears challenge tier on a *cleanly-selected* candidate (single checkpoint per route, no ensembling, LR chosen on dev only) — Candidate B cleared challenge tier on public test earlier but via the flagged repeated-public-test-comparison selection process; this result doesn't have that caveat.
+
+**New current best result, this session: public test macro=0.8264/micro=0.8374, dev macro=0.8625/micro=0.8634.**
