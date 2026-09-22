@@ -88,6 +88,7 @@ def main():
     ap.add_argument("--lp_epochs", type=int, default=0, help="LP-FT: freeze backbone for this many epochs (train head only), then unfreeze for the rest")
     ap.add_argument("--reinit_layers", type=int, default=0, help="re-initialize the top N transformer encoder layers before training")
     ap.add_argument("--warmup_ratio", type=float, default=0.06)
+    ap.add_argument("--init_from_run", default=None, help="warm-start from another run's best_model.pt (e.g. for zh->en sequential fine-tuning)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -104,6 +105,11 @@ def main():
     ).to(device)
     if model.config.pad_token_id is None:
         model.config.pad_token_id = tokenizer.pad_token_id
+
+    if args.init_from_run:
+        init_path = os.path.join(RESULTS_ROOT, args.init_from_run, "best_model.pt")
+        model.load_state_dict(torch.load(init_path, map_location=device))
+        print(f"warm-started from {init_path}", flush=True)
 
     if args.reinit_layers > 0:
         backbone = getattr(model, model.base_model_prefix)
