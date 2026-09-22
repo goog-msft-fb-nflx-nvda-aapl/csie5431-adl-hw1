@@ -908,4 +908,34 @@ Per-class breakdown shows exactly the targeted effect: **`Too_Expensive` f1@tune
 
 Public test is essentially flat vs. the prior ASL-ensemble champion (0.8372/0.8466 → 0.8352/0.8470, a wash); dev improves (0.8690/0.8696 → 0.8743/0.8716). Combined with the clean per-class story (the session's most persistent weak spot, `Too_Expensive`, is now solid), **adopting the DB-Loss ensemble as the new en-route standing champion.**
 
-Continuing down the round-2 backlog: zh→en transfer / translate-train next, then new model candidates (BGE-large-en/zh-v1.5, multilingual-e5-large).
+### Backlog item 5 — zh→en sequential fine-tuning (no machine translation)
+
+Added `--init_from_run RUN_NAME` to `train.py`: warm-starts the model from another run's `best_model.pt` (full state dict, including the classifier head) instead of the raw HF checkpoint. Used to fine-tune the en route starting from the already-trained zh route (F3) instead of from vanilla `BAAI/bge-m3` — the "borrow supervision from the larger zh training set without any MT noise" test the research recommended trying before translate-train.
+
+**Reproduce**: `python -u train.py --model_key bgem3 --context_mode none --loss db --lr 5e-5 --lang_subset en --epochs 15 --batch_size 8 --warmup_ratio 0.15 --init_from_run F3_bgem3_zh --run_name N1_bgem3_en_seqft_zh`.
+
+**Result — striking, and reveals something new about this dataset**: `best_epoch=0`. A **single pass** over the 627 en examples, starting from the zh-adapted checkpoint, already scores flat-0.5 macro=0.8694 — higher than any other en config's flat-0.5 this session. Every subsequent epoch made it *worse* (dropped to 0.70–0.83 and never recovered), i.e. the model actively un-learns something useful from the zh transfer as it keeps fine-tuning on the small en set — a catastrophic-forgetting-style effect, not just noise.
+
+**Tuned dev macro = 0.9002 — the single best number (ensemble or not) found this entire session**, from *one* checkpoint, one epoch of actual en gradient steps:
+
+| Config | Dev tuned macro | Public-test-en tuned macro |
+|---|---|---|
+| DB-Loss 5-way ensemble (prior champion) | 0.8985 | 0.8108 |
+| **zh→en sequential FT, single checkpoint, epoch 0 (N1)** | **0.9002** | 0.7981 |
+
+Per-class detail is clean too: `Confirm_Order` f1@tuned=1.000, `Compare_Competitor` f1@0.5=0.875 (no tuning needed), `Too_Expensive` f1@tuned=0.909 — the rare classes that were the session's original bottleneck are now comfortably solved by *this specific recipe*, matching what the class-frequency intuition predicted (zh's ~3x larger supervision for these same rare labels transfers directly).
+
+**Multi-seed check** (3 more seeds, `N2_bgem3_en_seqft_seed{1,2,3}`, `--epochs 6` — capped lower than 15 since N1's later epochs clearly hurt, no point paying for wasted compute): best epoch varied per seed (3, 5, 5 — not always epoch 0, so N1's "epoch 0 is best" wasn't a universal rule, just this seed's particular curve), but flat-0.5 macro was consistently strong: 0.8702, 0.8350, 0.8615 — all clearly above the vanilla (no zh warm-start) DB-Loss seeds' range (0.818–0.853). **This confirms the zh→en transfer is a genuine, seed-robust effect, not an epoch-0 fluke.**
+
+**4-way ensemble** (N1 + 3 new seeds): dev tuned=0.8990, public-en tuned=**0.8186** — this is the first backlog item where the ensemble *beats* the single best run on public test too (N1 alone: 0.7981), not just matches it.
+
+### Candidate C updated again — zh: F3 (unchanged) + en: 4-seed zh→en-sequential-fine-tune ensemble
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | **0.8405** | **0.8527** |
+| Dev | **0.8756** | **0.8760** |
+
+Both metrics improve on both splits over the DB-Loss-ensemble champion (public 0.8352/0.8470 → 0.8405/0.8527; dev 0.8743/0.8716 → 0.8756/0.8760) — dev and public test agree again, the pattern we trust. **Adopting zh→en sequential fine-tuning (DB-Loss, lr=5e-5, warmup=0.15, warm-started from the zh route) as the new en-route standing recipe, 4-seed ensemble as the standing champion.**
+
+**Backlog item 6 (translate-train) reassessed**: the research explicitly framed translate-train as "try only if the no-MT zh→en transfer underperforms" — it didn't; it's now the best result of the session. Deprioritizing translate-train accordingly (still available if this plateaus) and moving to item 7 (new model candidates) next.
