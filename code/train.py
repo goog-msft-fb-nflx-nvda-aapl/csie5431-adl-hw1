@@ -86,6 +86,8 @@ def main():
     ap.add_argument("--dev_path", default="/home/jtan/adl_hw1/data/dev_split.jsonl")
     ap.add_argument("--aug_path", default=None, help="extra train-only examples (e.g. back-translated), never added to dev")
     ap.add_argument("--lp_epochs", type=int, default=0, help="LP-FT: freeze backbone for this many epochs (train head only), then unfreeze for the rest")
+    ap.add_argument("--reinit_layers", type=int, default=0, help="re-initialize the top N transformer encoder layers before training")
+    ap.add_argument("--warmup_ratio", type=float, default=0.06)
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -102,6 +104,13 @@ def main():
     ).to(device)
     if model.config.pad_token_id is None:
         model.config.pad_token_id = tokenizer.pad_token_id
+
+    if args.reinit_layers > 0:
+        backbone = getattr(model, model.base_model_prefix)
+        layers = backbone.encoder.layer
+        for layer in layers[-args.reinit_layers:]:
+            layer.apply(model._init_weights)
+        print(f"re-initialized the top {args.reinit_layers} encoder layer(s)", flush=True)
 
     if args.lp_epochs > 0:
         backbone = getattr(model, model.base_model_prefix)
@@ -151,7 +160,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
     total_steps = len(train_loader) * args.epochs
     scheduler = get_linear_schedule_with_warmup(
-        optimizer, num_warmup_steps=int(0.06 * total_steps), num_training_steps=total_steps
+        optimizer, num_warmup_steps=int(args.warmup_ratio * total_steps), num_training_steps=total_steps
     )
 
     run_dir = os.path.join(RESULTS_ROOT, args.run_name)
