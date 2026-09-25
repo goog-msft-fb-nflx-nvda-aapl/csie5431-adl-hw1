@@ -1,8 +1,8 @@
 # ADL HW1 (A1) — User State Prediction
 
-Bilingual (zh/en) multi-label sales-intent classification. Architecture (all candidates, final choice not yet made — see below): a **language-routed ensemble** — a separate fine-tuned encoder per language, routed by the `language` field already present in `test.json`/`train.jsonl` (no detection needed), rather than one bilingual model. Every route ignores dialogue context entirely (utterance-only input) — found empirically to outperform every context-inclusion strategy tried, on both languages, at every training-data scale.
+Bilingual (zh/en) multi-label sales-intent classification. Architecture: a **language-routed ensemble** — a separate fine-tuned encoder per language, routed by the `language` field already present in `test.json`/`train.jsonl` (no detection needed), rather than one bilingual model. Every route ignores dialogue context entirely (utterance-only input) — found empirically to outperform every context-inclusion strategy tried, on both languages, at every training-data scale.
 
-**Status**: three candidate configurations exist, not yet resolved to one final submission — see `docs/TODO.md` for the current state and `docs/WORKLOG.md` for the full experiment log (every model/context/loss/LR variant tried and its measured result, ~45 runs). `docs/REPRODUCE.md` is the consolidated command reference for reproducing all three candidates plus the auxiliary experiments. Course spec and lecture reference material are under `docs/spec/`; the initial literature/model survey is under `docs/survey/`.
+**Status**: final. Submitted model is Candidate C (BGE-M3; zh single checkpoint + en 2-way ensemble) — see "Model performance" below. `docs/TODO.md`/`docs/WORKLOG.md` have the full experiment log (~71 runs) including the two earlier, superseded candidates (A, B) kept for the report's "Model variants" discussion. `docs/REPRODUCE.md` is the consolidated command reference for all three candidates plus the auxiliary experiments. Course spec and lecture reference material are under `docs/spec/`; the initial literature/model survey is under `docs/survey/`.
 
 ## Environment
 
@@ -33,7 +33,7 @@ python split_data.py --train_path ../data/train.jsonl --out_train ../data/train_
 python package_final.py --run_name <run_name> --out_dir ../models/zh [--fp16]
 python package_final.py --run_name <run_name> --out_dir ../models/en [--fp16]
 ```
-Note: only single-checkpoint routes are packageable this way today — the ensembled candidate doesn't have `run.sh` support yet (see `docs/TODO.md`).
+`package_final.py` also supports packaging a multi-checkpoint ensemble for one route: pass multiple `--run_name` values (e.g. the final en route is `--run_name N1_bgem3_en_seqft_zh N2_bgem3_en_seqft_seed1 --out_dir ../models/en --fp16`). It re-tunes thresholds fresh from each member's own saved dev logits and writes an `ensemble_meta.json`; `predict_final.py`/`run.sh` detect this automatically and average sigmoid probabilities across members at inference time.
 
 **4. Archive and upload** `models/` (as `models.tar.gz`) to Google Drive, and put the file's share-id into `download.sh`'s `GDRIVE_FILE_ID` variable.
 
@@ -46,7 +46,7 @@ bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
 
 `run.sh` calls `code/predict_final.py`, which loads both routes from `models/zh` and `models/en` (via `local_files_only=True` — no network calls), routes each test example by its `language` field, and writes `prediction.csv` in the required format (verified byte-identical header to `sample_prediction.csv`, `\n` line endings).
 
-## Model performance (three candidates, final choice not yet made)
+## Model performance (final submitted = Candidate C; A/B kept for comparison)
 
 | Candidate | Public test (Macro/Micro) | Dev split (Macro/Micro) |
 |---|---|---|
@@ -54,4 +54,4 @@ bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
 | B — ensembled + LR-tuned | 0.8218 / 0.8316 | 0.8335 / 0.8442 |
 | C — BGE-M3, zh single checkpoint + en 2-way zh→en-sequential-FT ensemble (final, packaged 2026-09-25) | **0.8396 / 0.8538** | **0.8778 / 0.8781** |
 
-Challenge grading tier is Macro-F1 ≥ 0.82, Micro-F1 ≥ 0.83 — **Candidate C clears it with real margin on both metrics, on both the dev split and the public-test diagnostic**, with a clean (non-public-test-driven) selection methodology. The en-route ensemble came from a multi-seed reliability check (round-2 Deep Research survey flagged the small en dev split as unreliable for single-run comparisons — confirmed on our own data, then fixed via seed-ensembling rather than just noted). See `docs/TODO.md` for the active research backlog and remaining open questions (whether a 568M-param retrieval model is in scope; B's selection-methodology caveat; en-route ensemble isn't packageable for `run.sh` yet). `docs/WORKLOG.md` has the full session log and `docs/REPRODUCE.md` the consolidated reproduction commands.
+Challenge grading tier is Macro-F1 ≥ 0.82, Micro-F1 ≥ 0.83 — **Candidate C clears it with real margin on both metrics, on both the dev split and the public-test diagnostic**, with a clean (non-public-test-driven) selection methodology. The en-route ensemble came from a multi-seed reliability check (round-2 Deep Research survey flagged the small en dev split as unreliable for single-run comparisons — confirmed on our own data, then fixed via seed-ensembling rather than just noted). It uses 2 of the 4 en checkpoints trained during the round-2 backlog, chosen as the best-performing pair that fits the assignment's 4GB download budget (the full 4-way ensemble doesn't fit). `docs/WORKLOG.md` has the full session log and `docs/REPRODUCE.md` the consolidated reproduction commands, including the exact `package_final.py` invocation for the final submission.
