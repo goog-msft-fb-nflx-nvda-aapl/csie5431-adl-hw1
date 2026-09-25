@@ -1047,3 +1047,26 @@ python package_final.py --run_name N1_bgem3_en_seqft_zh N2_bgem3_en_seqft_seed1 
 **End-to-end verification** (same discipline as the first packaging round): ran `run.sh` on the GPU with `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` forced, real `context.json`/`test.json`. 23s wall time. `prediction.csv`: 501 rows, header byte-identical to `sample_prediction.csv`. **Re-scored the packaged pipeline's actual output against `public_test_gold.csv` and got macro=0.8396, micro=0.8538 — exact match to the pre-packaging number.** Package size: zh 1.1GB + en 2.2GB (2 members) = **3.3GB total, `models.tar.gz` compressed to 3.0GB** — under the 4GB budget with ~1GB margin (at the current candidate; there is no more room to add a 3rd en member or grow the zh route without exceeding budget, worth remembering if further tuning is attempted before the actual deadline).
 
 Copied `models.tar.gz` to the Mac at `submission_package/models.tar.gz` — next step is upload to Google Drive (user's account), then filling the resulting link into `download.sh` and re-verifying the full `download.sh` → `run.sh` chain end-to-end exactly as the TA would run it.
+
+## 2026-09-26 — Google Drive upload + full TA-sequence simulation, both done
+
+**Upload**: the Mac's own upload bandwidth was measured at ~155 hours for the 3GB file (~5.4KB/s) — clearly a Mac-side bottleneck, not a Drive limitation, since the GPU server tested at ~51MB/s. Rather than eat that wait, installed `rclone` on both the Mac (`brew install rclone`) and the GPU server (static binary, no sudo), authorized it for the user's Google account via `rclone authorize "drive"` (run locally on the Mac — the one step that genuinely needed the user, since it's a personal Google login/consent), pasted the resulting token into the GPU server's rclone config, then uploaded `models.tar.gz` directly from the GPU server to Drive — bypassing the Mac's slow link entirely.
+
+**First upload attempt failed silently** — launched as a plain `ssh gsm-gpu2 "rclone copy ..."` (not inside `tmux`), and an SSH connection hiccup (this server has had recurring connection flakiness all session) sent a SIGHUP that killed the remote rclone process. The local tool only saw its own timeout and assumed it was still running in the background — it wasn't. Caught because the user checked `top` directly and saw no rclone process; a background-task "still running" status from *this side* was not itself a reliable signal here, since the local wrapper had lost track of the actual remote process state. **Fix, and the same one used all session for GPU training jobs**: relaunch inside `tmux` on the remote host, which survives SSH disconnects. Second attempt: 2.932 GiB in 59 minutes (slower than the raw network test suggested — likely Google Drive API-side throttling rather than a connection limit, plus this GPU box's load average was unusually high, 6507, at the time, for reasons unrelated to this session).
+
+**Verification steps, in order**: confirmed the uploaded file's byte count matches the local file exactly (3,148,393,082 bytes); got a shareable link/file-id (`1k0aMwypAyXA97cjbiebHtVrZutN7Yy0_`) via `rclone link`; filled it into `download.sh`.
+
+**Full TA-sequence simulation** — the actual point of all this, not just "did the upload succeed": built a clean directory (`/tmp/ta_sim` on the GPU box) containing *only* what the submission zip will contain (`README.md`, `run.sh`, `download.sh`, `code/` — no pre-existing `models/`, no pre-existing HF cache), then ran exactly what the TA runs:
+```bash
+bash ./download.sh
+bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
+```
+with a **fresh, empty `HF_HOME`** and `HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1` forced during `run.sh` specifically (the strongest available proxy for "no network access after download.sh," since we can't literally firewall the GPU box). Results:
+- `download.sh`: public link accessible with no auth prompt, 3.15GB in ~62s (comfortably under the stated 10MB/s/1-hour budget even accounting for real-world throttling — at a literal 10MB/s this would still be ~5.25 minutes).
+- `run.sh`: 23s, zero errors, no hidden dependency on anything outside the downloaded package.
+- `prediction.csv`: 501 rows, header byte-identical to `sample_prediction.csv`.
+- **Re-scored against `public_test_gold.csv`: macro=0.8396, micro=0.8538 — exact match**, confirming nothing was silently different in a truly clean environment vs. our dev/package testing environment.
+
+Test artifacts (`/tmp/ta_sim`, `/tmp/ta_sim_hf_cache_fresh`) cleaned up afterward.
+
+**Everything model/code/download/run related is now done and verified.** Remaining for actual submission: `report.pdf`, final `<student-id>.zip` assembly, and the NTU Cool upload itself (user's action).

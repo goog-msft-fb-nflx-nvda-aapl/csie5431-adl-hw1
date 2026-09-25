@@ -2,8 +2,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# TODO: replace with the real Google Drive file ID for models.zip before submission
-GDRIVE_FILE_ID="REPLACE_WITH_GDRIVE_FILE_ID"
+GDRIVE_FILE_ID="1k0aMwypAyXA97cjbiebHtVrZutN7Yy0_"
 
 cd "${SCRIPT_DIR}"
 gdown "https://drive.google.com/uc?id=${GDRIVE_FILE_ID}" -O models.tar.gz
