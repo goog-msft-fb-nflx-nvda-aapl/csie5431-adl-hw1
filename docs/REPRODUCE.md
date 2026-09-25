@@ -2,7 +2,17 @@
 
 Single reference for reproducing every result this project has produced. All commands run from `code/` unless noted, and assume the environment from the root `README.md` is set up and the provided data (`train.jsonl`, `context.json`, `test.json`, `public_test_gold.csv`) is placed under `../data/`.
 
-For the full experimental trail (every model/context/loss/LR variant tried, ~45 runs, with what each one found) see `WORKLOG.md` — every run there has its own `Reproduce:` command inline. This file only consolidates the commands that matter for reproducing the **three live final candidates** and the shared setup steps, so they don't have to be hunted down from a 750-line log.
+For the full experimental trail (every model/context/loss/LR variant tried, ~65 runs, with what each one found) see `WORKLOG.md` — every run there has its own `Reproduce:` command inline. This file only consolidates the commands that matter for reproducing the **live candidates** and the shared setup steps, so they don't have to be hunted down from a huge log.
+
+## Final submitted candidate (2026-09-25)
+
+zh: `F3_bgem3_zh` (single checkpoint, weighted BCE, lr=2e-5). en: **2-way ensemble** of `N1_bgem3_en_seqft_zh` + `N2_bgem3_en_seqft_seed1` (DB-Loss, lr=5e-5, warmup=0.15, warm-started from the zh checkpoint) — the best-performing pair out of the 4 en checkpoints trained during the round-2 backlog, chosen specifically because the full 4-way ensemble doesn't fit the 4GB download budget (see `WORKLOG.md`'s 2026-09-25 entry for the full 6-pair comparison). **Result: public test macro=0.8396/micro=0.8538, dev macro=0.8778/micro=0.8781.**
+
+```bash
+python package_final.py --run_name F3_bgem3_zh --out_dir ../models/zh --fp16
+python package_final.py --run_name N1_bgem3_en_seqft_zh N2_bgem3_en_seqft_seed1 --out_dir ../models/en --fp16 --lang_subset en
+```
+(`--run_name` accepts multiple names for an ensembled route; see the two routes' individual `train.py` commands under Candidate C / the round-2 backlog sections of `WORKLOG.md` for how `F3`/`N1`/the seed runs were produced in the first place.)
 
 ## 0. Setup — always first
 

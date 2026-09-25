@@ -1006,3 +1006,44 @@ Every item from the round-2 Deep Research backlog has been run, documented, and 
 Architecture: **language-routed BGE-M3** — zh route: `F3_bgem3_zh` (single checkpoint, weighted BCE, lr=2e-5); en route: 4-way ensemble of `N1_bgem3_en_seqft_zh` + `N2_bgem3_en_seqft_seed{1,2,3}` (DB-Loss, lr=5e-5, warmup=0.15, warm-started from the zh route's checkpoint, capped at 6 epochs since later epochs hurt).
 
 **Not yet done**: `predict_final.py`/`package_final.py` still only support single-checkpoint routes — the 4-way en ensemble isn't packageable for `run.sh` yet. This is now the top item for actually shipping this candidate, separate from the research backlog.
+
+## 2026-09-25 — Packaging the final candidate: a real constraint the 4-way ensemble didn't fit
+
+User picked the higher-performance option (ensemble) for the final submission. Before packaging, sizing math: each BGE-M3 checkpoint is 2.2GB fp32 / measured 1,135,578,156 bytes (~1.14GB) fp16. **The full 4-way en ensemble alone is ~4.55GB, plus zh's ~1.14GB — ~5.7GB total, over the 4GB download budget.** Not something to discover after uploading — checked before packaging anything.
+
+Budget math: 4GB total, zh fixed at ~1.14GB → ~2.86GB left for en → **at most 2 members fit** (2×1.14=2.28GB, total ≈3.42GB, comfortable margin), 3 would be ≈4.55GB total, over budget.
+
+**Reframed as an optimization problem**: which 2-of-4 already-trained en checkpoints (N1, seed1, seed2, seed3) perform best together? Evaluated all 6 pairs via `ensemble_eval.py`:
+
+| Pair | Dev tuned macro | Public-en tuned macro |
+|---|---|---|
+| **N1 + seed1** | **0.9074** | 0.8173 |
+| N1 + seed3 | 0.8945 | 0.8089 |
+| seed1 + seed3 | 0.8985 | 0.8155 |
+| N1 + seed2 | 0.8878 | 0.8034 |
+| seed1 + seed2 | 0.8839 | 0.8105 |
+| seed2 + seed3 | 0.8760 | 0.8141 |
+
+**N1+seed1 wins clearly, and — genuinely surprising — beats the full 4-way ensemble on dev (0.9074 vs. 0.8990) while being statistically tied on public test (0.8173 vs. 0.8186).** The size constraint didn't cost anything; if anything the smaller, more selectively-chosen ensemble is the better one. (Caught and fixed one bug along the way: `ensemble_eval.py` writes its threshold file to a fixed `/tmp/ensemble_en_thresholds.json` path, which got overwritten by the last pair in the 6-pair evaluation loop — an initial routed-score computation using a stale threshold file gave an incorrect, too-low number; re-ran `ensemble_eval.py` for just the chosen pair immediately before computing the final routed score to get a clean threshold file.)
+
+### Final submitted candidate — zh: `F3_bgem3_zh` (single) + en: 2-way ensemble (`N1_bgem3_en_seqft_zh` + `N2_bgem3_en_seqft_seed1`)
+
+| Split | Macro-F1 | Micro-F1 |
+|---|---|---|
+| Public test (diagnostic) | **0.8396** | **0.8538** |
+| Dev | **0.8778** | **0.8781** |
+
+### Packaging infrastructure extended to support multi-checkpoint ensemble routes
+
+- **`code/package_final.py`**: `--run_name` now accepts one or more run names (`nargs="+"`). One name → existing single-checkpoint packaging (`inference_meta.json`). Multiple names → new `package_ensemble()`: packages each checkpoint into `<out_dir>/member_{i}/`, **re-tunes thresholds fresh from each member's own saved `dev_logits.npy`** (self-contained — doesn't depend on a prior `ensemble_eval.py` run's `/tmp` output, avoiding the exact staleness bug hit above), writes a shared `ensemble_meta.json` (context_mode/max_length/thresholds/member dir list — asserts all members share the same context_mode and max_length).
+- **`code/predict_final.py`**: `load_route()` now checks for `ensemble_meta.json` vs `inference_meta.json` in the route directory and loads either one model or a list of member models accordingly; `predict_route()` averages sigmoid probabilities across all members before applying the (shared) thresholds. Fully backward compatible with the single-checkpoint packages from earlier in the session.
+
+**Reproduce**:
+```bash
+python package_final.py --run_name F3_bgem3_zh --out_dir ../models/zh --fp16
+python package_final.py --run_name N1_bgem3_en_seqft_zh N2_bgem3_en_seqft_seed1 --out_dir ../models/en --fp16 --lang_subset en
+```
+
+**End-to-end verification** (same discipline as the first packaging round): ran `run.sh` on the GPU with `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1` forced, real `context.json`/`test.json`. 23s wall time. `prediction.csv`: 501 rows, header byte-identical to `sample_prediction.csv`. **Re-scored the packaged pipeline's actual output against `public_test_gold.csv` and got macro=0.8396, micro=0.8538 — exact match to the pre-packaging number.** Package size: zh 1.1GB + en 2.2GB (2 members) = **3.3GB total, `models.tar.gz` compressed to 3.0GB** — under the 4GB budget with ~1GB margin (at the current candidate; there is no more room to add a 3rd en member or grow the zh route without exceeding budget, worth remembering if further tuning is attempted before the actual deadline).
+
+Copied `models.tar.gz` to the Mac at `submission_package/models.tar.gz` — next step is upload to Google Drive (user's account), then filling the resulting link into `download.sh` and re-verifying the full `download.sh` → `run.sh` chain end-to-end exactly as the TA would run it.

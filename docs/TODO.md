@@ -137,6 +137,14 @@ Per explicit instruction: assumed permission for external-dataset auxiliary pret
 
 Final standing candidate (Candidate C, current best): **public test macro=0.8405/micro=0.8527, dev macro=0.8756/micro=0.8760.** Architecture: BGE-M3 both routes — zh: single checkpoint (`F3_bgem3_zh`); en: 4-way ensemble warm-started from the zh checkpoint (`N1_bgem3_en_seqft_zh` + `N2_bgem3_en_seqft_seed{1,2,3}`, DB-Loss, lr=5e-5, warmup=0.15).
 
-**Next up, not part of the research backlog**: `predict_final.py`/`package_final.py` need extending to support multi-checkpoint ensemble routes before this candidate can actually be packaged for `run.sh` — currently the only packageable candidates are single-checkpoint ones (the earlier, weaker Candidate A/C-v1). This is the actual blocker to shipping, now that the research is done.
-
 All public/ungated — no HuggingFace or GitHub tokens needed for anything done this round.
+
+## 2026-09-25 — Wrapping up: packaging the final candidate
+
+- [x] **Discovered a real blocker before it became a problem**: the 4-way en ensemble is ~5.7GB packaged (fp16), over the 4GB download budget. Reframed as "pick the best-fitting subset": evaluated all 6 pairs of the 4 en checkpoints. **Winner: N1+seed1** — beats the full 4-way on dev (0.9074 vs 0.8990), ties it on public test (0.8173 vs 0.8186). No performance cost from the size constraint.
+- [x] **`package_final.py`/`predict_final.py` extended** to support multi-checkpoint ensemble routes (`ensemble_meta.json` + `member_*/` subdirs, averaged sigmoid probabilities, thresholds re-tuned fresh at packaging time — self-contained, not dependent on a prior `/tmp` file).
+- [x] **Final candidate packaged and verified end-to-end offline**: zh (`F3`, single) + en (`N1`+`seed1`, 2-way). `run.sh` run with `HF_HUB_OFFLINE=1`, 23s, header byte-exact, **re-scored output matches the pre-packaging number exactly: public macro=0.8396/micro=0.8538, dev macro=0.8778/micro=0.8781**. Package: 3.3GB uncompressed, `models.tar.gz` 3.0GB compressed — under the 4GB budget, ~1GB margin (no room left to add more without exceeding it).
+- [x] Copied `models.tar.gz` to the Mac (`submission_package/models.tar.gz`, ~3.15GB).
+- [ ] **BLOCKED ON USER**: upload `models.tar.gz` to Google Drive, share it, give the link/file-id for `download.sh`'s `GDRIVE_FILE_ID` placeholder.
+- [ ] Once uploaded: fill in `download.sh`, then simulate the exact TA execution (`bash ./download.sh && bash ./run.sh ...`) from a clean environment (no pre-existing model cache) to catch any hardcoded paths or hidden dependencies on files that happen to already exist on the dev GPU.
+- [ ] `report.pdf`, final `<student-id>.zip` assembly, and the actual NTU Cool submission are still outstanding — see the "wrap up" step list from the 2026-09-23 conversation.

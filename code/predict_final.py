@@ -41,31 +41,47 @@ def collate(batch, tokenizer):
     return tokenizer.pad(batch, return_tensors="pt")
 
 
-def load_route(model_dir, device):
-    with open(f"{model_dir}/inference_meta.json") as f:
-        meta = json.load(f)
+def _load_model_and_tokenizer(model_dir, device):
     tokenizer = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
     model = AutoModelForSequenceClassification.from_pretrained(
         model_dir, local_files_only=True, torch_dtype="auto"
     ).to(device)
     model.eval()
+    return model, tokenizer
+
+
+def load_route(model_dir, device):
+    """Returns (list of (model, tokenizer) pairs, meta, thresholds).
+    A route is either one packaged checkpoint (inference_meta.json) or an
+    averaged-logit ensemble of several (ensemble_meta.json + member_* subdirs)."""
+    ensemble_meta_path = f"{model_dir}/ensemble_meta.json"
+    if os.path.exists(ensemble_meta_path):
+        with open(ensemble_meta_path) as f:
+            meta = json.load(f)
+        members = [_load_model_and_tokenizer(f"{model_dir}/{d}", device) for d in meta["member_dirs"]]
+    else:
+        with open(f"{model_dir}/inference_meta.json") as f:
+            meta = json.load(f)
+        members = [_load_model_and_tokenizer(model_dir, device)]
     thresholds = np.array([meta["thresholds"][l] for l in LABELS])
-    return model, tokenizer, meta, thresholds
+    return members, meta, thresholds
 
 
-def predict_route(model, tokenizer, meta, thresholds, examples, device, batch_size=32):
+def predict_route(members, meta, thresholds, examples, device, batch_size=32):
     if not examples:
         return {}
-    ds = InferDataset(examples, tokenizer, meta["context_mode"], meta["k"], meta["max_length"])
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=lambda b: collate(b, tokenizer))
-    all_logits = []
-    with torch.no_grad():
-        for batch in loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            out = model(**batch)
-            all_logits.append(out.logits.cpu().numpy())
-    logits = np.concatenate(all_logits)
-    probs = sigmoid(logits)
+    member_probs = []
+    for model, tokenizer in members:
+        ds = InferDataset(examples, tokenizer, meta["context_mode"], meta["k"], meta["max_length"])
+        loader = DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=lambda b: collate(b, tokenizer))
+        all_logits = []
+        with torch.no_grad():
+            for batch in loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                out = model(**batch)
+                all_logits.append(out.logits.cpu().numpy())
+        member_probs.append(sigmoid(np.concatenate(all_logits)))
+    probs = np.mean(member_probs, axis=0)
     preds = (probs >= thresholds[None, :]).astype(int)
     return {e["id"]: pred for e, pred in zip(examples, preds)}
 
@@ -92,12 +108,12 @@ def main():
     zh_examples = [e for e in examples if e["language"] == "zh"]
     en_examples = [e for e in examples if e["language"] != "zh"]
 
-    zh_model, zh_tok, zh_meta, zh_th = load_route(f"{args.model_dir}/zh", device)
-    en_model, en_tok, en_meta, en_th = load_route(f"{args.model_dir}/en", device)
+    zh_members, zh_meta, zh_th = load_route(f"{args.model_dir}/zh", device)
+    en_members, en_meta, en_th = load_route(f"{args.model_dir}/en", device)
 
     preds = {}
-    preds.update(predict_route(zh_model, zh_tok, zh_meta, zh_th, zh_examples, device))
-    preds.update(predict_route(en_model, en_tok, en_meta, en_th, en_examples, device))
+    preds.update(predict_route(zh_members, zh_meta, zh_th, zh_examples, device))
+    preds.update(predict_route(en_members, en_meta, en_th, en_examples, device))
 
     os.makedirs(os.path.dirname(os.path.abspath(args.out_path)) or ".", exist_ok=True)
     with open(args.out_path, "w", newline="") as f:
