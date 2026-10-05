@@ -1,5 +1,7 @@
 # ADL HW1 (A1) — experiment log
 
+> **Note (2026-10-05):** per TA clarification, all scripts now live under `code/scripts/` (previously `code/`), one directory deeper than when most entries below were written. Every `Reproduce:` command in this log was run with cwd `code/` at the time — to rerun today, `cd code/scripts/` instead and add one extra `../` to any relative `../data/...` or `../models/...` path (i.e. `../../data/...`, `../../models/...`). `README.md`/`docs/REPRODUCE.md` already reflect the new paths; this log is left as originally written for historical accuracy.
+
 ## 2026-09-15 — Task intake + EDA
 
 - Read `PA1.md`. Task: multi-label (10-class) sales-intent classification on bilingual (zh/en) utterance + optional dialogue context. Macro-F1/Micro-F1 gated at basic 0.62/0.73, medium 0.76/0.79, challenge 0.82/0.83.

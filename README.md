@@ -19,19 +19,19 @@ Data (`train.jsonl`, `context.json`, `test.json`, `public_test_gold.csv`) is exp
 
 ## Reproducing training from scratch
 
-Full commands for all three candidates, plus the auxiliary (negative-result) experiments, are in **`docs/REPRODUCE.md`**. Short version, all commands run from `code/`:
+Full commands for all three candidates, plus the auxiliary (negative-result) experiments, are in **`docs/REPRODUCE.md`**. Short version, all commands run from `code/scripts/`:
 
 **1. Split train/dev** (stratified by label + language, no external dependency, deterministic):
 ```bash
-python split_data.py --train_path ../data/train.jsonl --out_train ../data/train_split.jsonl --out_dev ../data/dev_split.jsonl
+python split_data.py --train_path ../../data/train.jsonl --out_train ../../data/train_split.jsonl --out_dev ../../data/dev_split.jsonl
 ```
 
 **2. Train + tune + diagnostic-check each route** — see `docs/REPRODUCE.md` sections 1–3 for the exact `train.py`/`threshold_tune.py`/`route_combine_eval.py` invocations for each of the three candidates (simple single-checkpoint, ensembled+LR-tuned, and BGE-M3).
 
 **3. Package for offline inference** (bundles full model+tokenizer via `save_pretrained`, not just weights, so `run.sh` never needs network access; `--fp16` halves the package size — needed for the BGE-M3 candidate to fit the 4GB download budget):
 ```bash
-python package_final.py --run_name <run_name> --out_dir ../models/zh [--fp16]
-python package_final.py --run_name <run_name> --out_dir ../models/en [--fp16]
+python package_final.py --run_name <run_name> --out_dir ../../models/zh [--fp16]
+python package_final.py --run_name <run_name> --out_dir ../../models/en [--fp16]
 ```
 `package_final.py` also supports packaging a multi-checkpoint ensemble for one route: pass multiple `--run_name` values (e.g. the final en route is `--run_name N1_bgem3_en_seqft_zh N2_bgem3_en_seqft_seed1 --out_dir ../models/en --fp16`). It re-tunes thresholds fresh from each member's own saved dev logits and writes an `ensemble_meta.json`; `predict_final.py`/`run.sh` detect this automatically and average sigmoid probabilities across members at inference time.
 
@@ -44,7 +44,7 @@ bash ./download.sh
 bash ./run.sh /path/to/context.json /path/to/test.json /path/to/prediction.csv
 ```
 
-`run.sh` calls `code/predict_final.py`, which loads both routes from `models/zh` and `models/en` (via `local_files_only=True` — no network calls), routes each test example by its `language` field, and writes `prediction.csv` in the required format (verified byte-identical header to `sample_prediction.csv`, `\n` line endings).
+`run.sh` calls `code/scripts/predict_final.py`, which loads both routes from `models/zh` and `models/en` (via `local_files_only=True` — no network calls), routes each test example by its `language` field, and writes `prediction.csv` in the required format (verified byte-identical header to `sample_prediction.csv`, `\n` line endings).
 
 ## Model performance (final submitted = Candidate C; A/B kept for comparison)
 
